@@ -19,7 +19,7 @@ type CallModel = (jpeg: Buffer) => Promise<string>
 const version: string = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 const WEEK_S = 7 * 24 * 3600
 
-export function createApp(callModel: CallModel, synth?: Synth, callText?: (prompt: string) => Promise<string>, opts?: { staticDir?: string; share?: Share; streamModel?: StreamModel; describe?: (jpeg: Buffer) => Promise<string>; access?: Access }): express.Express {
+export function createApp(callModel: CallModel, synth?: Synth, callText?: (prompt: string) => Promise<string>, opts?: { staticDir?: string; share?: Share; streamModel?: StreamModel; describe?: (jpeg: Buffer) => Promise<string>; access?: Access; roomSecret?: string }): express.Express {
   const app = express()
   const access = opts?.access ?? LOCAL_ACCESS
   app.use((req, res, next) => (hostAllowed(access, req.headers.host) ? next() : void res.status(403).json({ error: 'forbidden' }))) // blocks DNS rebinding
@@ -38,7 +38,7 @@ export function createApp(callModel: CallModel, synth?: Synth, callText?: (promp
     if (req.path.startsWith('/api/') && req.path !== '/api/health' && !keyAllowed(access, req.headers.cookie)) return void res.status(401).json({ error: 'access key required' })
     next()
   })
-  app.use(roomsRouter(roomSecret(process.env)))
+  app.use(roomsRouter(opts?.roomSecret ?? roomSecret(process.env)))
   app.get('/api/health', (_req, res) => void res.json(healthFrom(process.env, version)))
   app.post('/api/read-board', express.raw({ type: 'image/jpeg', limit: '5mb' }), readBoardHandler(callModel, opts?.streamModel))
   app.use(synth ? ttsRouter(synth) : (_req, res, next) => (_req.path === '/api/tts' ? void res.status(503).json({ error: 'tts not configured' }) : next()))
@@ -67,11 +67,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   // Hosting platforms set PORT and need every interface; locally stay on loopback. HOST overrides.
   const port = Number(process.env.PORT) || 8787
   const host = process.env.HOST || (process.env.PORT ? '0.0.0.0' : '127.0.0.1')
+  const secret = roomSecret(process.env)
   const provider = pickProvider(process.env)
   const callModel = provider === 'anthropic' ? anthropicCallModelFromEnv(process.env) : bedrockCallModelFromEnv(process.env)
-  const server = createApp(callModel, pollySynth(), provider === 'anthropic' ? anthropicCallTextFromEnv(process.env) : process.env.AWS_REGION ? bedrockCallTextFromEnv(process.env) : undefined, { staticDir: existsSync('dist/index.html') ? join(process.cwd(), 'dist') : undefined, share: shareFromEnv(process.env), streamModel: streamModelFromEnv(process.env), describe: provider === 'anthropic' ? anthropicDescribeFromEnv(process.env) : process.env.AWS_REGION ? bedrockDescribeFromEnv(process.env) : undefined, access }).listen(port, host, () => {
+  const server = createApp(callModel, pollySynth(), provider === 'anthropic' ? anthropicCallTextFromEnv(process.env) : process.env.AWS_REGION ? bedrockCallTextFromEnv(process.env) : undefined, { staticDir: existsSync('dist/index.html') ? join(process.cwd(), 'dist') : undefined, share: shareFromEnv(process.env), streamModel: streamModelFromEnv(process.env), describe: provider === 'anthropic' ? anthropicDescribeFromEnv(process.env) : process.env.AWS_REGION ? bedrockDescribeFromEnv(process.env) : undefined, access, roomSecret: secret }).listen(port, host, () => {
     console.log(`listening on ${host}:${port} (board reader: ${provider}; BOARD_MODEL_ID set: ${process.env.BOARD_MODEL_ID ? 'yes' : 'no'}; hosts: ${[...access.hosts].join(', ')}; access key: ${access.key ? 'required' : 'off'})`)
   })
   attachTranscribe(server, undefined, access)
-  attachRooms(server, { secret: roomSecret(process.env), access })
+  attachRooms(server, { secret, access })
 }

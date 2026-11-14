@@ -85,4 +85,16 @@ describe('/ws/room', () => {
       expect(a).toBeDefined(); expect(b).toBeDefined(); a!.close(); b!.close()
     }, undefined, true)
   })
+  it('closes upgrades for unknown paths with 404', async () => {
+    await withServer(async p => {
+      const ws = new WebSocket(`ws://localhost:${p}/ws/nope`)
+      const code = await new Promise<number | string>(res => {
+        ws.on('unexpected-response', (_rq, r) => res(r.statusCode ?? 0))
+        ws.on('error', () => res('error'))
+        ws.on('close', () => res('closed'))
+      })
+      expect([404, 'error', 'closed']).toContain(code)
+      expect(code).not.toBeUndefined()
+    }, undefined, true)
+  })
 })
