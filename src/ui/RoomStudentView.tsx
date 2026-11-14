@@ -40,7 +40,9 @@ const VOICE_WAIT_MS = 1500
 const asTerms = (items: WhisperItem[]): Term[] => items.map((it, i) => ({ id: i + 1, latex: '', phrase: it.phrase, box: { x: it.x, y: 0, w: 0, h: 0 } }))
 const asResolution = (word: string, items: WhisperItem[]): Resolution => ({ word: { word, t: performance.now() } as WordEvent, terms: asTerms(items) })
 
-export function RoomStudentView({ room, token, deps }: { room: string; token: string; deps?: Partial<Deps> }) {
+// autoStart: the phone home already took the press (sound unlocked) and picked this class, so connect on
+// mount. startedText is then what the screen reader hears first ("Math 201 started.").
+export function RoomStudentView({ room, token, deps, autoStart, startedText }: { room: string; token: string; deps?: Partial<Deps>; autoStart?: boolean; startedText?: string }) {
   const d = useRef<Deps | null>(null)
   if (!d.current) d.current = {
     connect: deps?.connect ?? ((url, on) => connectRoom(url, on)),
@@ -69,13 +71,14 @@ export function RoomStudentView({ room, token, deps }: { room: string; token: st
       .then(() => { player.play({ ...r, word: { ...r.word, t: performance.now() } }) })
   }
   useEffect(() => () => stop.current?.(), [])
+  useEffect(() => { if (autoStart) start() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const start = () => {
     const { player, connect, keepAwake, location } = d.current!
     player.unlock()
     const release = keepAwake()
     setStarted(true)
-    setSaid(`Joining ${room}.`)
+    setSaid(startedText ?? `Joining ${room}.`)
     const conn = connect(roomSocketUrl(location, { role: 'student', room, token }), {
       onMessage: raw => {
         const m = raw as ServerToStudent
