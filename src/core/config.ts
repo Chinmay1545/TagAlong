@@ -27,3 +27,5 @@ export const LASER_COLOURS: readonly ('red' | 'green')[] = ['red', 'green'] // l
 export const LASER_STATIC_WEAK_MS = 3000 // over-exposed board: a red/green dot that has not moved for this long is ink, not a laser
 export const LASER_STATIC_MS = 20000 // any dot that has not moved at all for this long is a fixed light, not a laser
 export const LASER_MASK_MS = 400 // the board loop hides laser dots seen this recently from its change check
+export const TIE_DIST = 0.012 // aim outside every box: two unrelated boxes this close to equally near mean "cannot tell", so stay silent
+export const SCOPE_WAIT_MS = 300 // a timed "this" with no later words yet waits this long for scope words ("this top part") to arrive
