@@ -14,6 +14,7 @@ const TIP_KEY = 'tagalong:tip'
 const TIP = 'Tip: a three-finger triple-tap turns on Screen Curtain to save battery. Listening keeps running.'
 const STOP_ARM_MS = 4000
 const TRYING_MS = 10000
+const QUIET_BOARD_MS = 2000 // a board this soon after joining is the reply to hello; later ones are real news
 
 type Deps = {
   connect?: typeof createRelay
@@ -59,7 +60,7 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
     sent: false, // join sent on the current socket
     waited: false,
     dropped: false,
-    quiet: false, // the next board is the reply to hello: show it, do not talk over "Connected to ..."
+    quietUntil: 0, // a board before this time is the reply to hello: show it, do not talk over "Connected to ..."
     tryT: undefined as ReturnType<typeof setTimeout> | undefined,
     mode: mode,
     last: '',
@@ -93,7 +94,7 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
     send({ type: 'join', room: t })
     send(helloMsg())
     r.sent = true
-    r.quiet = true
+    r.quietUntil = Date.now() + QUIET_BOARD_MS
     r.joined = t
     r.phase = 'joined'
     setChoices(null)
@@ -129,7 +130,7 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
       ended = 'Class ended. '
     }
     if (r.joined) {
-      if (!r.sent) { send({ type: 'join', room: r.joined }); send(helloMsg()); r.sent = true; r.quiet = true }
+      if (!r.sent) { send({ type: 'join', room: r.joined }); send(helloMsg()); r.sent = true; r.quietUntil = Date.now() + QUIET_BOARD_MS }
       return
     }
     const pick = pickRoom(live, saved, token)
@@ -153,8 +154,8 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
     if (m.type === 'resolution') text = m.muted ? 'Without app: nothing whispered.' : m.phrase ?? 'nothing in reach'
     else if (m.type === 'board') {
       const b: string = (m.phrases ?? []).join(', ') || 'board is empty'
-      if (r.quiet) {
-        r.quiet = false
+      if (Date.now() < r.quietUntil) {
+        r.quietUntil = 0
         r.last = b
         setBig(b)
         return
@@ -197,7 +198,7 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
     r.joined = null
     r.sent = false
     r.waited = false
-    r.quiet = false
+    r.quietUntil = 0
     setTrying(false)
     announce('Connecting.')
     clearTimeout(r.tryT)

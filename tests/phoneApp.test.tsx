@@ -7,6 +7,7 @@ import { routeFor } from '../src/phone/route'
 const TOKEN = 'abcdefghij0123456789'
 const OTHER = 'zyxwvutsrq9876543210'
 const TIP = 'Tip: a three-finger triple-tap turns on Screen Curtain to save battery. Listening keeps running.'
+const QUIET_BOARD_MS = 2000
 
 let opts: any, sent: any[], close: ReturnType<typeof vi.fn>, release: ReturnType<typeof vi.fn>
 let synth: any
@@ -369,6 +370,15 @@ describe('phone app: final fixes', () => {
     msg({ type: 'board', phrases: ['a'] })
     expect(said()).toBe('Back.')
     expect(document.querySelector('.p-big')!.textContent).toBe('a')
+  })
+
+  it('when the laptop has no board yet, a board that comes later is spoken', () => {
+    vi.useFakeTimers()
+    joined()
+    act(() => { vi.advanceTimersByTime(QUIET_BOARD_MS) }) // no board came back for hello
+    msg({ type: 'board', phrases: ['x plus 3'] })
+    expect(said()).toBe('x plus 3')
+    vi.useRealTimers()
   })
 
   it('the hello board is not spoken in speak mode and does not cut off Connected', () => {
