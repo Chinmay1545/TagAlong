@@ -6,11 +6,12 @@ export type Msg =
   | { type: 'board'; phrases: string[] }
   | { type: 'mode'; withoutApp: boolean }
   | { type: 'hello' }
+  | { type: 'unmark' }
   // student -> judge: "I didn't understand this" and "what is happening right now?"
   | { type: 'bookmark' }
   | { type: 'ask' }
   // judge -> student: bookmark confirmed, the answer to "ask", and an alert worth hearing (class ending)
-  | { type: 'marked'; count: number }
+  | { type: 'marked'; count: number; removed?: true }
   | { type: 'assist'; text: string }
   | { type: 'notice'; text: string }
 
@@ -33,7 +34,8 @@ export const modeMsg = (withoutApp: boolean): Msg => ({ type: 'mode', withoutApp
 export const helloMsg = (): Msg => ({ type: 'hello' })
 export const bookmarkMsg = (): Msg => ({ type: 'bookmark' })
 export const askMsg = (): Msg => ({ type: 'ask' })
-export const markedMsg = (count: number): Msg => ({ type: 'marked', count })
+export const unmarkMsg = (): Msg => ({ type: 'unmark' })
+export const markedMsg = (count: number, removed = false): Msg => (removed ? { type: 'marked', count, removed: true } : { type: 'marked', count })
 export const assistMsg = (text: string): Msg => ({ type: 'assist', text })
 export const noticeMsg = (text: string): Msg => ({ type: 'notice', text })
 

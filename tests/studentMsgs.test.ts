@@ -12,3 +12,12 @@ describe('student <-> judge messages', () => {
     expect(noticeMsg('Class is wrapping up.')).toEqual({ type: 'notice', text: 'Class is wrapping up.' })
   })
 })
+
+import { unmarkMsg, markedMsg as markedMsg2 } from '../src/live/broadcast'
+describe('unmark messages', () => {
+  it('unmarkMsg and markedMsg removed flag', () => {
+    expect(unmarkMsg()).toEqual({ type: 'unmark' })
+    expect(markedMsg2(3)).toEqual({ type: 'marked', count: 3 })
+    expect(markedMsg2(2, true)).toEqual({ type: 'marked', count: 2, removed: true })
+  })
+})
