@@ -33,3 +33,11 @@ describe('speakMath', () => {
     ['f(x)=x²', 'f of x equals x squared'],
   ])('%s -> %s', (i, o) => expect(speakMath(i)).toBe(o))
 })
+
+describe('speakMath: factors and fractions', () => {
+  it.each([
+    ['2x(x+3)', '2 x times x plus 3'],
+    ['2(x+3)', '2 times x plus 3'],
+    ['(2x * (x+3))/(2x)', '2 x times x plus 3, over 2 x'],
+  ])('%s -> %s', (i, o) => expect(speakMath(i)).toBe(o))
+})
