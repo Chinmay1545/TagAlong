@@ -28,6 +28,7 @@ export async function mountJudge(search = '') {
     startBoardLoop: vi.fn(),
     startToolTracker: vi.fn((..._a: unknown[]) => () => {}), // called with (video, onPoint, getHand, { laser, stick })
     boardReset: vi.fn(),
+    reading: false, // what the fake board loop reports as a read in flight
     startCamera: vi.fn(async () => {}),
     setTerms: null as null | ((t: Term[]) => void), // live mode: what a board read would hand over
     pushPoint: null as null | ((p: PointerPoint) => void), // what the hand tracker / detectors would report
@@ -46,7 +47,11 @@ export async function mountJudge(search = '') {
     startBoardLoop: (_v: unknown, _tips: unknown, onTerms: (t: Term[]) => void) => {
       fakes.startBoardLoop()
       fakes.setTerms = onTerms
-      return { stop: () => {}, reset: () => { fakes.boardReset(); onTerms([]) }, pendingRegion: () => null }
+      let locked = false
+      return {
+        stop: () => {}, reset: () => { locked = false; fakes.boardReset(); onTerms([]) }, pendingRegion: () => null,
+        lock: (on: boolean) => { locked = on }, locked: () => locked, reading: () => fakes.reading,
+      }
     },
   }))
   vi.doMock('../../src/audio/whisper', async orig => ({

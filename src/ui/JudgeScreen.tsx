@@ -164,6 +164,8 @@ export function JudgeScreen() {
   const [fps, setFps] = useState(0)
   const [boardAgo, setBoardAgo] = useState<string>('none')
   const [termCount, setTermCount] = useState(0)
+  const [locked, setLocked] = useState(false) // board frozen: boxes stay as they are
+  const [reading, setReading] = useState(false) // a board read is in flight
   const [camError, setCamError] = useState<string | null>(null)
   const [speech, setSpeech] = useState<Speech>('off')
   const [whisperOn, setWhisperOn] = useState(true)
@@ -207,6 +209,7 @@ export function JudgeScreen() {
   const resetBoard = () => {
     resolvedRef.current = []
     liveRef.current.cancelWaiting()
+    setLocked(false)
     if (boardLoopRef.current) boardLoopRef.current.reset()
     else setTerms([])
   }
@@ -262,6 +265,7 @@ export function JudgeScreen() {
       const now = performance.now()
       liveRef.current.checkHeld() // gives up on held words that waited too long
       setFps(tipsRef.current.window(now - 1000, now).filter(s => kindOf(s) === 'finger').length)
+      setReading(boardLoopRef.current?.reading() ?? false)
       const at = boardAtRef.current
       setBoardAgo(fixture ? 'fixture' : at === null ? 'none' : `${((now - at) / 1000).toFixed(0)}s ago`)
     }, 500)
@@ -386,6 +390,11 @@ export function JudgeScreen() {
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
       const k = e.key.toLowerCase()
       if (k === 'w') { toggleWhisperRef.current(); return }
+      if (k === 'f') { // freeze the boxes for the demo; pointing, speech and whispers keep working
+        const loop = boardLoopRef.current
+        if (loop) { loop.lock(!loop.locked()); setLocked(loop.locked()) }
+        return
+      }
       if (k === 'y' || k === 'n') {
         const r = applyMark(rowsRef.current, tallyRef.current, k)
         rowsRef.current = r.rows
@@ -492,6 +501,8 @@ export function JudgeScreen() {
             {stage.photo && <img className="demo-photo" src={stage.photo} alt="Saved demo board" />}
             <canvas ref={canvasRef} />
           </div>
+          <div className="vf-lock" aria-live="polite">{locked && <span className="vf-tag"><span className="dot" aria-hidden="true" />Board locked</span>}</div>
+          <span className={`vf-reading${reading ? ' on' : ''}`} aria-hidden="true">Reading the board</span>
           <span className="vf-tag vf-src"><span className="dot" aria-hidden="true" />{stage.photo ? 'DEMO' : 'LIVE'}</span>
           <span className="vf-tag vf-fps">{fps} FPS</span>
         </div>
@@ -500,6 +511,7 @@ export function JudgeScreen() {
           <span><kbd>Y</kbd> correct</span>
           <span><kbd>N</kbd> wrong</span>
           <span><kbd>W</kbd> with / without app</span>
+          <span><kbd>F</kbd> lock board</span>
         </div>
         {camError && <div className="cam-error" role="alert">{camError}</div>}
       </section>
