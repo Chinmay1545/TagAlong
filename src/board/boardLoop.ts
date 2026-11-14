@@ -7,8 +7,8 @@ import { readBoard } from './boardClient'
 import { mergeTerms } from '../core/mergeTerms'
 import { uniquePhrases } from '../core/phrase'
 
-// Strict >: a hand seen exactly HAND_RECENT_MS ago still counts as recent. "Hand" means anything that
-// covers the board (finger or stick); a laser dot covers nothing and never blocks a read.
+// Strict >: a hand seen exactly HAND_RECENT_MS ago still counts as recent. Only a hand counts:
+// a laser dot covers nothing, and a stick covers too little to be worth the risk of a false detection.
 export function shouldReadBoard(now: number, lastTipAt: number | null, changed: boolean): boolean {
   return changed && (lastTipAt === null || now - lastTipAt > HAND_RECENT_MS)
 }

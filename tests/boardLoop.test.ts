@@ -354,13 +354,13 @@ describe('board loop: what blocks a read (pointer kinds)', () => {
     h.stop()
   })
 
-  it('a stick in view blocks the read too (it covers the board)', async () => {
+  it('a stick in view does not block a read (a false stick must never stop the boxes)', async () => {
     const tips = new TipBuffer()
     const h = harness(tips)
     const id = keepPointing(tips, 'stick')
     h.replies.push(fraction)
     await h.tick()
-    expect(h.reads()).toBe(0)
+    expect(h.reads()).toBe(1)
     clearInterval(id)
     h.stop()
   })

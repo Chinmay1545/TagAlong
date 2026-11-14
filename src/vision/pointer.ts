@@ -12,8 +12,9 @@ export const kindOf = (s: AnyPoint): PointerKind => ('kind' in s ? s.kind : 'fin
 export const toPointer = (s: AnyPoint): PointerPoint =>
   'kind' in s ? s : { kind: 'finger', x: s.x, y: s.y, confidence: 1, t: s.t }
 
-// Things that physically cover the board, so a board read should wait for them to leave. A laser never does.
-export const coversBoard = (kind: PointerKind): boolean => kind === 'finger' || kind === 'stick'
+// What makes a board read wait: a hand in front of the writing. A laser covers nothing. A stick covers very
+// little, and its detector (no tape to lock on to) can be wrong, so it must not be able to stop the boxes.
+export const coversBoard = (kind: PointerKind): boolean => kind === 'finger'
 
 export const pointerLabel = (kind: PointerKind): string => kind
 

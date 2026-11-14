@@ -34,7 +34,7 @@ export class TipBuffer {
     return this.samples.length ? this.samples[this.samples.length - 1].t : null
   }
 
-  // Last time something that covers the board (finger or stick) was seen. A laser or the mouse does not count.
+  // Last time a hand was seen in front of the board. A stick, a laser or the mouse does not count.
   lastCoverAt(): number | null {
     for (let i = this.samples.length - 1; i >= 0; i--) if (coversBoard(kindOf(this.samples[i]))) return this.samples[i].t
     return null

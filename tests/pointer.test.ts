@@ -8,9 +8,9 @@ describe('pointer point', () => {
     expect(kindOf({ t: 0, x: 0.1, y: 0.1 })).toBe('finger')
     expect(kindOf(pt('laser', 0))).toBe('laser')
   })
-  it('only a finger or a stick covers the board; a laser and the mouse do not', () => {
+  it('only a hand covers the board; a stick, a laser and the mouse do not', () => {
     expect(coversBoard('finger')).toBe(true)
-    expect(coversBoard('stick')).toBe(true)
+    expect(coversBoard('stick')).toBe(false)
     expect(coversBoard('laser')).toBe(false)
     expect(coversBoard('mouse')).toBe(false)
   })

@@ -51,7 +51,7 @@ describe('TipBuffer', () => {
     expect(b.window(0, 100)).toHaveLength(8);
   });
 
-  it('lastCoverAt: the last time a finger or stick was seen, ignoring laser and mouse', () => {
+  it('lastCoverAt: the last time a hand was seen, ignoring stick, laser and mouse', () => {
     const b = new TipBuffer();
     expect(b.lastCoverAt()).toBeNull();
     b.push({ kind: 'laser', t: 5, x: 0, y: 0, confidence: 1 });
@@ -60,7 +60,7 @@ describe('TipBuffer', () => {
     b.push({ kind: 'stick', t: 20, x: 0, y: 0, confidence: 1 });
     b.push({ kind: 'laser', t: 30, x: 0, y: 0, confidence: 1 });
     b.push({ kind: 'mouse', t: 40, x: 0, y: 0, confidence: 1 });
-    expect(b.lastCoverAt()).toBe(20);
+    expect(b.lastCoverAt()).toBe(10);
     expect(b.lastAt()).toBe(40);
   });
 });
