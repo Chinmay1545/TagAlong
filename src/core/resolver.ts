@@ -1,4 +1,4 @@
-import { DWELL_MS, DWELL_RADIUS, MAX_DIST, TIP_WINDOW_MS } from './config'
+import { DWELL_MS, DWELL_RADIUS, MAX_DIST, NEST_SNAP, TIP_WINDOW_MS } from './config'
 import type { TipBuffer } from './tipBuffer'
 import type { Box, Resolution, Term, TipSample, WordEvent } from './types'
 
@@ -14,7 +14,9 @@ export function boxDistance(box: Box, x: number, y: number): number {
 
 // The term the point is on. Inside more than one box (a bracket group and a term in it): the smallest box wins,
 // so pointing at y inside (2x+y) gives y. Inside none: the nearest box within maxDist. Ties go to the lowest id.
-export function termAt(terms: Term[], x: number, y: number, maxDist = MAX_DIST): Term | null {
+// Near miss: a pointer inside a group box and within `snap` of a smaller term that sits in that group means
+// the smaller term (a fingertip is not tracked more exactly than that). Pass snap = 0 for the plain rule.
+export function termAt(terms: Term[], x: number, y: number, maxDist = MAX_DIST, snap = NEST_SNAP): Term | null {
   let best: Term | null = null
   let bestD = Infinity
   let bestArea = Infinity
@@ -34,7 +36,26 @@ export function termAt(terms: Term[], x: number, y: number, maxDist = MAX_DIST):
       bestArea = area
     }
   }
-  return best
+  if (!best || bestD > EPS) return best
+  // The pointer is inside `best`. Look for a smaller term inside it that the pointer only just misses.
+  const reach = Math.min(snap, maxDist)
+  let pick: Term | null = null
+  let pickD = Infinity
+  let pickArea = Infinity
+  for (const term of terms) {
+    const area = term.box.w * term.box.h
+    if (term === best || area >= bestArea - EPS) continue
+    const d = boxDistance(term.box, x, y)
+    if (d > reach) continue
+    if (boxDistance(best.box, term.box.x + term.box.w / 2, term.box.y + term.box.h / 2) > EPS) continue // not in the group
+    const sameD = Math.abs(d - pickD) <= EPS
+    if (d < pickD - EPS || (sameD && area < pickArea - EPS) || (sameD && Math.abs(area - pickArea) <= EPS && pick !== null && term.id < pick.id)) {
+      pick = term
+      pickD = d
+      pickArea = area
+    }
+  }
+  return pick ?? best
 }
 
 export function steadiestTip(
@@ -124,7 +145,8 @@ export function readPointer(word: WordEvent, terms: Term[], tips: TipBuffer): Po
     return found.length ? { resolution: { word, terms: found }, aim: null, miss: null } : none(track.length ? 'empty-space' : 'not-pointing')
   }
   // this / that / here: whisper only if the pointer (of any kind) rested on one spot around the word.
-  const aim = dwellPoint(tips.lead(t - TIP_WINDOW_MS, t + TIP_WINDOW_MS), t)
+  // The pointer that counts is the one seen around the word itself (a laser put away a moment ago does not).
+  const aim = dwellPoint(tips.leadAt(t, TIP_WINDOW_MS), t)
   if (!aim) return none('not-pointing')
   const term = termAt(terms, aim.x, aim.y)
   return term ? { resolution: { word, terms: [term] }, aim, miss: null } : none('empty-space', aim)

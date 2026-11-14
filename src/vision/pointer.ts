@@ -1,3 +1,4 @@
+import { TOOL_NEAR_MS } from '../core/config'
 import type { TipSample } from '../core/types'
 
 // One shape for everything that can point at the board. Board coordinates 0..1, raw (never mirrored).
@@ -32,6 +33,17 @@ export function leading<T extends AnyPoint>(samples: T[]): T[] {
   for (const s of samples) count.set(kindOf(s), (count.get(kindOf(s)) ?? 0) + 1)
   const need = (k: PointerKind) => (k === 'laser' || k === 'stick' ? MIN_TOOL_POINTS : 1)
   const kind = PRIORITY.find(k => (count.get(k) ?? 0) >= need(k)) ?? PRIORITY.find(k => count.has(k))!
+  return samples.filter(s => kindOf(s) === kind)
+}
+
+// For a single word said at time t: the samples of the pointer that was pointing at that moment. A laser,
+// stick or mouse wins over the finger only if it was seen within nearMs of the word; one that was put away
+// before the word (or only came on after it) does not silence the finger. Returns all of the winner's samples.
+export function leadingAt<T extends AnyPoint>(samples: T[], t: number, nearMs = TOOL_NEAR_MS): T[] {
+  const count = new Map<PointerKind, number>()
+  for (const s of samples) if (Math.abs(s.t - t) <= nearMs) count.set(kindOf(s), (count.get(kindOf(s)) ?? 0) + 1)
+  const need = (k: PointerKind) => (k === 'laser' || k === 'stick' ? MIN_TOOL_POINTS : 1)
+  const kind = PRIORITY.find(k => k !== 'finger' && (count.get(k) ?? 0) >= need(k)) ?? 'finger'
   return samples.filter(s => kindOf(s) === kind)
 }
 

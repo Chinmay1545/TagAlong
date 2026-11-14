@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { activePointer, coversBoard, kindOf, leading, pointerLabel, type PointerPoint } from '../src/vision/pointer'
+import { MIN_TOOL_POINTS, activePointer, coversBoard, kindOf, leading, leadingAt, pointerLabel, type PointerPoint } from '../src/vision/pointer'
+import { TOOL_NEAR_MS } from '../src/core/config'
 
 const pt = (kind: PointerPoint['kind'], t: number, x = 0.5, y = 0.5): PointerPoint => ({ kind, x, y, confidence: 1, t })
 
@@ -69,4 +70,57 @@ describe('activePointer: the dot shown on the judge screen', () => {
   it('gives a plain fingertip sample a kind and a confidence', () => {
     expect(activePointer([{ t: 990, x: 0.3, y: 0.4 }], 1000)).toEqual({ kind: 'finger', x: 0.3, y: 0.4, confidence: 1, t: 990 })
   })
+})
+
+// For "this / that / here" the question is who was pointing when the word was said, not who was seen at
+// some point in the second around it.
+describe('leadingAt: which pointer counts at the moment of the word', () => {
+  const T = 1000
+  const run = (kind: PointerPoint['kind'], t0: number, t1: number, x = 0.5) => {
+    const out: PointerPoint[] = []
+    for (let t = t0; t <= t1; t += 33) out.push(pt(kind, t, x, 0.5))
+    return out
+  }
+  const mix = (...tracks: PointerPoint[][]) => tracks.flat().sort((a, b) => a.t - b.t)
+  const kinds = (ps: { t: number }[]) => [...new Set(ps.map(p => kindOf(p as PointerPoint)))]
+
+  it('a laser seen around the word beats the finger', () => {
+    expect(kinds(leadingAt(mix(run('finger', 500, 1500), run('laser', 500, 1500)), T))).toEqual(['laser'])
+  })
+  it('a laser that went off well before the word does not: the finger counts', () => {
+    expect(kinds(leadingAt(mix(run('finger', 500, 1500), run('laser', 500, T - TOOL_NEAR_MS - 50)), T))).toEqual(['finger'])
+  })
+  it('a laser that only comes on well after the word does not either', () => {
+    expect(kinds(leadingAt(mix(run('finger', 500, 1500), run('laser', T + TOOL_NEAR_MS + 50, 1500)), T))).toEqual(['finger'])
+  })
+  it('a laser that went off just before the word still counts (within TOOL_NEAR_MS)', () => {
+    expect(kinds(leadingAt(mix(run('finger', 500, 1500), run('laser', 500, T - 100)), T))).toEqual(['laser'])
+  })
+  it('when the laser leads, all of its points in the window are returned, not just the near ones', () => {
+    const laser = run('laser', 500, 1500)
+    expect(leadingAt(mix(run('finger', 500, 1500), laser), T)).toEqual(laser)
+  })
+  it(`needs ${MIN_TOOL_POINTS} tool points near the word: fewer is a stray dot`, () => {
+    const near = (n: number) => Array.from({ length: n }, (_, i) => pt('laser', T - 40 + i * 33))
+    expect(kinds(leadingAt(mix(run('finger', 500, 1500), near(MIN_TOOL_POINTS - 1)), T))).toEqual(['finger'])
+    expect(kinds(leadingAt(mix(run('finger', 500, 1500), near(MIN_TOOL_POINTS)), T))).toEqual(['laser'])
+  })
+  it('laser gone, stick still there: the stick', () => {
+    expect(kinds(leadingAt(mix(run('finger', 500, 1500), run('stick', 500, 1500), run('laser', 500, 600)), T))).toEqual(['stick'])
+  })
+  it('the mouse leads only while it is on the photo around the word', () => {
+    expect(kinds(leadingAt(mix(run('finger', 500, 1500), run('mouse', 900, 1100)), T))).toEqual(['mouse'])
+    expect(kinds(leadingAt(mix(run('finger', 500, 1500), run('mouse', 500, 600)), T))).toEqual(['finger'])
+  })
+  it('a tool with no finger in view at all', () => {
+    expect(kinds(leadingAt(run('stick', 500, 1500), T))).toEqual(['stick'])
+  })
+  it('a tool long gone and no finger: nothing is pointing', () => {
+    expect(leadingAt(run('laser', 500, 600), T)).toEqual([])
+  })
+  it('plain fingertip samples with no kind are fingers', () => {
+    const plain = [{ t: 900, x: 0.1, y: 0.1 }, { t: 1000, x: 0.1, y: 0.1 }]
+    expect(leadingAt(plain, T)).toEqual(plain)
+  })
+  it('nothing in, nothing out', () => expect(leadingAt([], T)).toEqual([]))
 })

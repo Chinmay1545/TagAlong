@@ -1,5 +1,5 @@
 import { TIP_BUFFER_MS } from './config'
-import { coversBoard, kindOf, leading, type AnyPoint } from '../vision/pointer'
+import { coversBoard, kindOf, leading, leadingAt, type AnyPoint } from '../vision/pointer'
 
 // Holds the last few seconds of pointer points from every source (finger, stick, laser, mouse).
 // ponytail: plain array, linear scans. Fine at ~30 Hz per source over a 3 s window.
@@ -24,6 +24,11 @@ export class TipBuffer {
   // Only the points of the pointer that wins in the window (laser, then stick, then finger).
   lead(t0: number, t1: number): AnyPoint[] {
     return leading(this.window(t0, t1))
+  }
+
+  // For a word said at t: the points (within windowMs of t) of the pointer that was pointing at that moment.
+  leadAt(t: number, windowMs: number): AnyPoint[] {
+    return leadingAt(this.window(t - windowMs, t + windowMs), t)
   }
 
   all(): AnyPoint[] {
