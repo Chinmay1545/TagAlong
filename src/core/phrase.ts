@@ -56,7 +56,10 @@ export function phraseFor(latex: string, box: Box): string {
 // denominator mid-board are both "the 2 x in the middle"). The whisper player drops a phrase that is already
 // sounding, so "this cancels with that" would play once. Fix: within each group of equal phrases, name the
 // terms relative to each other along the axis they are spread on ("the upper 2 x in the middle").
-// Pure: returns new objects only for renamed terms; ids, boxes and order are unchanged.
+// Names are always derived from each term's ORIGINAL phrase, never from an earlier renamed one, so they stay
+// right across reads (a third twin written above a pair, or one of a pair erased). Term (src/core/types.ts) is
+// frozen, so the original phrase of every term this function returns is remembered here, keyed by object.
+// Returns new objects only where the phrase changes; ids, boxes and order are unchanged; the input is not mutated.
 const ORDER = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth']
 const norm = (p: string) => p.trim().replace(/\s+/g, ' ').toLowerCase()
 const centre = (b: Box) => ({ x: b.x + b.w / 2, y: b.y + b.h / 2 })
@@ -65,9 +68,12 @@ const withAdjective = (phrase: string, adj: string) => {
   return /^the\s/i.test(p) ? `${p.slice(0, 3)} ${adj} ${p.slice(4)}` : `the ${adj} ${p}`
 }
 
+const original = new WeakMap<object, string>()
+const originalOf = (t: { phrase: string }) => original.get(t) ?? t.phrase
+
 export function uniquePhrases<T extends { phrase: string; box: Box }>(terms: T[]): T[] {
   const groups = new Map<string, number[]>()
-  terms.forEach((t, i) => { const k = norm(t.phrase); groups.set(k, [...(groups.get(k) ?? []), i]) })
+  terms.forEach((t, i) => { const k = norm(originalOf(t)); groups.set(k, [...(groups.get(k) ?? []), i]) })
   const renamed = new Map<number, string>()
   for (const idx of groups.values()) {
     if (idx.length < 2) continue
@@ -76,10 +82,16 @@ export function uniquePhrases<T extends { phrase: string; box: Box }>(terms: T[]
     const axis: 'x' | 'y' = spread('y') >= spread('x') ? 'y' : 'x'
     const sorted = [...idx].sort((a, b) => centre(terms[a].box)[axis] - centre(terms[b].box)[axis] || a - b)
     sorted.forEach((i, rank) => {
-      const p = terms[i].phrase
+      const p = originalOf(terms[i])
       if (sorted.length === 2) renamed.set(i, withAdjective(p, axis === 'y' ? (rank ? 'lower' : 'upper') : (rank ? 'right' : 'left')))
       else renamed.set(i, `${p.trim().replace(/\s+/g, ' ')}, ${ORDER[rank] ?? `number ${rank + 1}`} from the ${axis === 'y' ? 'top' : 'left'}`)
     })
   }
-  return terms.map((t, i) => (renamed.has(i) ? { ...t, phrase: renamed.get(i)! } : t))
+  return terms.map((t, i) => {
+    const base = originalOf(t)
+    const phrase = renamed.get(i) ?? base // a term no longer in a group gets its plain phrase back
+    const out = phrase === t.phrase ? t : { ...t, phrase }
+    original.set(out, base)
+    return out
+  })
 }

@@ -95,3 +95,27 @@ describe('uniquePhrases', () => {
     expect(new Set(out.map(x => x.phrase.toLowerCase())).size).toBe(2)
   })
 })
+
+describe('uniquePhrases across board reads', () => {
+  const t = (id: number, cy: number): Term => ({ id, latex: '2x', phrase: 'the 2 x in the middle', box: box(0.5, cy) })
+
+  it('renames from the original phrase when a third twin appears above the pair', () => {
+    const first = uniquePhrases([t(1, 0.45), t(2, 0.52)]) // the existing pair, as shown after the earlier read
+    const second = uniquePhrases([...first, t(3, 0.4)])   // a new 2x written above both (raw phrase from the server)
+    expect(second.map(x => x.phrase)).toEqual([
+      'the 2 x in the middle, second from the top',
+      'the 2 x in the middle, third from the top',
+      'the 2 x in the middle, first from the top',
+    ])
+  })
+
+  it('gives a lone survivor its plain phrase back when its twin is erased', () => {
+    const pair = uniquePhrases([t(1, 0.45), t(2, 0.52)])
+    expect(uniquePhrases([pair[1]]).map(x => x.phrase)).toEqual(['the 2 x in the middle'])
+  })
+
+  it('gives the same names when run again on its own output', () => {
+    const once = uniquePhrases([t(1, 0.45), t(2, 0.52), t(3, 0.4)])
+    expect(uniquePhrases(once).map(x => x.phrase)).toEqual(once.map(x => x.phrase))
+  })
+})
