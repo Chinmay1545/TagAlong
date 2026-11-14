@@ -21,7 +21,7 @@ import { connectTranscribe } from '../speech/transcribeClient'
 import { startMic } from '../speech/mic'
 import { startWebSpeech } from '../speech/webSpeech'
 import type { WordItem } from '../speech/words'
-import { LATENCY_LOG_MAX, DEFAULT_CLASS, UNDO_MARK_MS } from '../core/config'
+import { LATENCY_LOG_MAX, APP_NAME, DEFAULT_CLASS, UNDO_MARK_MS } from '../core/config'
 import { createRelay, relayUrl, type RelayStatus } from '../live/relay'
 import { RoomPanel } from './RoomPanel'
 import { createTranscript, substitute, type Segment } from '../transcript/store'
@@ -174,6 +174,7 @@ export function JudgeScreen() {
   useEffect(() => () => bcRef.current.close(), [])
   const boardRef = useRef<Resolution | null>(null)
   const askingRef = useRef(false)
+  const askWaitersRef = useRef<((m: Msg) => void)[]>([])
   const className = new URLSearchParams(location.search).get('class') || DEFAULT_CLASS
   const [joinUrl, setJoinUrl] = useState<string | null>(null)
   const [listeners, setListeners] = useState(0)
@@ -192,7 +193,7 @@ export function JudgeScreen() {
       const count = transcriptRef.current.addBookmark(t)
       marksRef.current.set(from, [...(marksRef.current.get(from) ?? []), t])
       setSegs(transcriptRef.current.segments())
-      reply(markedMsg(count))
+      reply(markedMsg(from === 'tab' ? count : marksRef.current.get(from)!.length))
       return
     }
     if (m.type === 'unmark') {
@@ -202,15 +203,16 @@ export function JudgeScreen() {
       marksRef.current.set(from, mine.slice(0, -1))
       const count = transcriptRef.current.removeBookmark(t)
       setSegs(transcriptRef.current.segments())
-      reply(markedMsg(count, true))
+      reply(markedMsg(from === 'tab' ? count : mine.length - 1, true))
       return
     }
     if (m.type === 'ask') {
-      if (askingRef.current) return // one answer at a time; a second press while looking gets that answer
+      askWaitersRef.current.push(reply)
+      if (askingRef.current) return // one look at a time; everyone who asks meanwhile gets that same answer
       askingRef.current = true
       const photo = document.querySelector<HTMLImageElement>('img.demo-photo')
       void askScene(() => grabJpeg(photo ?? videoRef.current!))
-        .then(text => reply(assistMsg(text)))
+        .then(text => { const waiting = askWaitersRef.current; askWaitersRef.current = []; waiting.forEach(w => w(assistMsg(text))) })
         .finally(() => { askingRef.current = false })
       return
     }
@@ -525,7 +527,7 @@ export function JudgeScreen() {
     <main className="judge">
       <div className="grain" aria-hidden="true" />
       <header className="masthead rise" style={step(0)}>
-        <div className="wordmark"><span className="dot" aria-hidden="true" />THIS &amp; THAT</div>
+        <div className="wordmark"><span className="dot" aria-hidden="true" />{APP_NAME}</div>
         <div className="status mono">board · {boardAgo}<span className="status-gap" />speech · {speechLabel}<span className="status-gap" />pointers · {pointersLabel(tools, !!stage.photo)}<span className="status-gap" /><a className="student-link" href="/?student=1" target="student" onClick={e => { e.preventDefault(); window.open('/?student=1', 'student', 'popup,width=1280,height=800') }} title="Opens in its own window; keep this window visible so hand tracking keeps running">Open student view</a></div>
       </header>
       <RoomPanel name={className} joinUrl={joinUrl} listeners={listeners} relay={relayStatus} />

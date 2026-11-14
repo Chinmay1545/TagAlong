@@ -58,6 +58,20 @@ describe('judge relay', () => {
     await wait(10)
     expect(ws.sent).toContainEqual({ type: 'marked', count: 0, removed: true, to: 'abc' })
   })
+  it('mark counts are per phone', async () => {
+    const { ws, wait } = await mountWithRoom()
+    act(() => { ws.push({ type: 'bookmark', from: 'abc' }); ws.push({ type: 'bookmark', from: 'xyz' }) })
+    await wait(10)
+    expect(ws.sent.filter(m => m.type === 'marked')).toEqual([{ type: 'marked', count: 1, to: 'abc' }, { type: 'marked', count: 1, to: 'xyz' }])
+  })
+  it('every phone that asks while one look is in flight gets the answer', async () => {
+    const { ws, wait } = await mountWithRoom()
+    act(() => { ws.push({ type: 'ask', from: 'abc' }); ws.push({ type: 'ask', from: 'xyz' }) })
+    await wait(30)
+    const a = ws.sent.filter(m => m.type === 'assist')
+    expect(a.map(m => m.to)).toEqual(['abc', 'xyz'])
+    expect(a[0].text).toBe(a[1].text)
+  })
   it('unmark from someone with no mark is ignored', async () => {
     const { ws, wait } = await mountWithRoom()
     act(() => ws.push({ type: 'unmark', from: 'zed' }))
