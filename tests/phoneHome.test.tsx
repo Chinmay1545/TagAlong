@@ -26,9 +26,10 @@ function setup(saved: SavedClass[], statuses: Array<string[] | 'fail'>) {
     return { ok: true, json: async () => ({ live: s }) } as Response
   })
   const urls: string[] = []
+  const earcons = { unlock: vi.fn(), play: vi.fn() }
   const player = { unlock: vi.fn(), play: vi.fn(() => ({ startedAt: 0 })), prepare: vi.fn(async () => {}) }
   render(<PhoneHome deps={{
-    storage, fetch: fetch as never, pollMs: 5000, player,
+    storage, fetch: fetch as never, pollMs: 5000, player, earcons,
     room: {
       connect: (url: string) => { urls.push(url); return { close: () => {} } },
       keepAwake: () => () => {}, location: { protocol: 'https:', host: 'app.example' },
@@ -37,7 +38,7 @@ function setup(saved: SavedClass[], statuses: Array<string[] | 'fail'>) {
   const said = () => document.querySelector('[aria-live]')!.textContent!.replace(/​/g, '')
   const press = (name: RegExp) => act(async () => { fireEvent.click(screen.getByRole('button', { name })) })
   const wait = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms) })
-  return { fetch, bodies, urls, player, said, press, wait }
+  return { fetch, bodies, urls, player, earcons, said, press, wait }
 }
 
 describe('phone home (?classes)', () => {
@@ -81,6 +82,15 @@ describe('phone home (?classes)', () => {
     expect(t.said()).toBe('Math 201 started.')
     await t.wait(20000)
     expect(t.fetch).toHaveBeenCalledTimes(3)
+  })
+
+  it('unlocks the tones on the press and plays the start tone once when a class starts', async () => {
+    const t = setup([cls('math201', 'Math 201'), cls('bio110', 'Biology 110')], [[], ['bio110']])
+    await t.press(/^start listening$/i)
+    expect(t.earcons.unlock).toHaveBeenCalled()
+    expect(t.earcons.play).not.toHaveBeenCalled()
+    await t.wait(5000)
+    expect(t.earcons.play.mock.calls).toEqual([['start']])
   })
 
   it('keeps waiting quietly through network errors', async () => {

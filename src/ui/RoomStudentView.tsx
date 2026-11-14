@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Resolution, Term, WordEvent } from '../core/types'
 import { createWhisperPlayer } from '../audio/whisper'
 import { keepScreenAwake } from '../vision/wakeLock'
+import { createEarcons } from '../phone/earcons'
 import { connectRoom, roomSocketUrl, type RoomState } from '../live/roomClient'
 import type { ServerToStudent, WhisperItem } from '../live/roomProtocol'
 import './student.css'
@@ -27,6 +28,7 @@ type Player = Pick<ReturnType<typeof createWhisperPlayer>, 'unlock' | 'play' | '
 type Deps = {
   connect: (url: string, on: { onMessage(m: unknown): void; onState?(s: RoomState): void }) => { close(): void }
   player: Player
+  earcons: ReturnType<typeof createEarcons>
   keepAwake: () => () => void
   location: { protocol: string; host: string }
   voiceWaitMs: number
@@ -47,6 +49,7 @@ export function RoomStudentView({ room, token, deps, autoStart, startedText }: {
   if (!d.current) d.current = {
     connect: deps?.connect ?? ((url, on) => connectRoom(url, on)),
     player: deps?.player ?? createWhisperPlayer({ fetchTts: roomTts(room, token) }),
+    earcons: deps?.earcons ?? createEarcons(),
     keepAwake: deps?.keepAwake ?? keepScreenAwake,
     location: deps?.location ?? window.location,
     voiceWaitMs: deps?.voiceWaitMs ?? VOICE_WAIT_MS,
@@ -60,6 +63,10 @@ export function RoomStudentView({ room, token, deps, autoStart, startedText }: {
   const board = useRef<string[]>([])
   const last = useRef<Resolution | null>(null)
   const wasOpen = useRef(false)
+  // Connection tones: one for joining, one when a class we waited for starts. Never for whispers.
+  const chimed = useRef(!!startedText) // the phone home already played the start tone
+  const waited = useRef(false)
+  const dropped = useRef(false) // the client reports 'reconnecting' on every retry: one drop tone per outage
   const stop = useRef<(() => void) | null>(null)
   // Whispers play strictly in order; each one first waits (bounded) for its server voice.
   const chain = useRef<Promise<void>>(Promise.resolve())
@@ -74,15 +81,20 @@ export function RoomStudentView({ room, token, deps, autoStart, startedText }: {
   useEffect(() => { if (autoStart) start() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const start = () => {
-    const { player, connect, keepAwake, location } = d.current!
+    const { player, connect, keepAwake, location, earcons } = d.current!
     player.unlock()
+    earcons.unlock()
     const release = keepAwake()
     setStarted(true)
     setSaid(startedText ?? `Joining ${room}.`)
     const conn = connect(roomSocketUrl(location, { role: 'student', room, token }), {
       onMessage: raw => {
         const m = raw as ServerToStudent
-        if (m.type === 'status') { setLive(m.live); setSaid(m.live ? `Connected to ${room}.` : `Waiting for ${room} to start.`) }
+        if (m.type === 'status') {
+          if (!m.live) waited.current = true
+          else if (waited.current) { waited.current = false; chimed.current = true; earcons.play('start') }
+          else if (!chimed.current) { chimed.current = true; earcons.play('join') }
+          setLive(m.live); setSaid(m.live ? `Connected to ${room}.` : `Waiting for ${room} to start.`) }
         else if (m.type === 'board') { board.current = m.phrases; void player.prepare(asTerms(m.phrases.map(p => ({ phrase: p, x: 0.5 })))) }
         else if (m.type === 'whisper') {
           const r = asResolution(m.word, m.items)
@@ -92,8 +104,8 @@ export function RoomStudentView({ room, token, deps, autoStart, startedText }: {
         } else if (m.type === 'notice') setSaid(m.text)
       },
       onState: s => {
-        if (s === 'reconnecting') { setSaid('Reconnecting…'); setLive(false) }
-        else if (s === 'open') { if (wasOpen.current) setSaid('Back.'); wasOpen.current = true }
+        if (s === 'reconnecting') { setSaid('Reconnecting…'); setLive(false); if (!dropped.current) earcons.play('drop'); dropped.current = true }
+        else if (s === 'open') { if (wasOpen.current) { setSaid('Back.'); earcons.play('back') } wasOpen.current = true; dropped.current = false }
       },
     })
     stop.current = () => { conn.close(); release() }

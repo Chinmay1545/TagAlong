@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createWhisperPlayer } from '../audio/whisper'
 import { RoomStudentView, roomTts } from '../ui/RoomStudentView'
+import { createEarcons } from './earcons'
 import { loadClasses, type SavedClass } from './classes'
 import '../ui/student.css'
 
@@ -13,7 +14,8 @@ type Deps = {
   fetch: typeof fetch
   pollMs: number
   player: NonNullable<RoomDeps['player']>
-  room: Omit<RoomDeps, 'player'>
+  earcons: NonNullable<RoomDeps['earcons']>
+  room: Omit<RoomDeps, 'player' | 'earcons'>
 }
 
 const POLL_MS = 5000
@@ -27,6 +29,7 @@ export function PhoneHome({ deps }: { deps?: Partial<Deps> }) {
   // One player for every class, so the sound unlocked by the one press works whichever class is joined.
   const target = useRef<SavedClass | null>(null)
   const player = useRef(deps?.player ?? createWhisperPlayer({ fetchTts: text => roomTts(target.current!.room, target.current!.token)(text) }))
+  const earcons = useRef(deps?.earcons ?? createEarcons())
   const [phase, setPhase] = useState<'idle' | 'waiting' | 'choose' | 'joined'>('idle')
   const [live, setLive] = useState<SavedClass[]>([])
   const [joined, setJoined] = useState<SavedClass | null>(null)
@@ -39,6 +42,7 @@ export function PhoneHome({ deps }: { deps?: Partial<Deps> }) {
     target.current = c
     setJoined(c)
     setSaid(announce ? `${c.label} started.` : '')
+    if (announce) earcons.current.play('start')
     setPhase('joined')
   }
 
@@ -63,6 +67,7 @@ export function PhoneHome({ deps }: { deps?: Partial<Deps> }) {
 
   const begin = () => {
     player.current.unlock()
+    earcons.current.unlock()
     void check(true)
   }
 
@@ -71,7 +76,7 @@ export function PhoneHome({ deps }: { deps?: Partial<Deps> }) {
     return <RoomStudentView room={all[0].room} token={all[0].token} deps={{ ...deps?.room, ...(deps?.player && { player: deps.player }) }} />
   }
   if (phase === 'joined' && joined) {
-    return <RoomStudentView room={joined.room} token={joined.token} autoStart startedText={said || undefined} deps={{ ...deps?.room, player: player.current }} />
+    return <RoomStudentView room={joined.room} token={joined.token} autoStart startedText={said || undefined} deps={{ ...deps?.room, player: player.current, earcons: earcons.current }} />
   }
   return (
     <main className="student phone-home">

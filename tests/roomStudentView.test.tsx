@@ -159,3 +159,69 @@ describe('student phone: one voice per whisper, ElevenLabs first', () => {
     expect(t.player.play.mock.calls.map(c => c[0].terms[0].phrase)).toEqual(['first', 'second'])
   })
 })
+
+describe('connection earcons', () => {
+  function withEarcons(extra: Record<string, unknown> = {}, props: Record<string, unknown> = {}) {
+    let on: { onMessage(m: unknown): void; onState?(s: RoomState): void } | null = null
+    const player = { unlock: vi.fn(), play: vi.fn((_r: Resolution) => ({ startedAt: 0 })), prepare: vi.fn(async (_t: Term[]) => {}) }
+    const earcons = { unlock: vi.fn(), play: vi.fn() }
+    render(<RoomStudentView room="math201" token="tok" {...props} deps={{
+      connect: (_u, h) => { on = h; return { send: () => {}, close: () => {} } },
+      player, keepAwake: () => () => {}, location: { protocol: 'https:', host: 'app.example' }, voiceWaitMs: 1000, earcons, ...extra,
+    }} />)
+    const recv = (m: unknown) => act(async () => { on!.onMessage(m); await sleep(5) })
+    const state = (s: RoomState) => act(() => on!.onState?.(s))
+    const start = () => act(() => { fireEvent.click(screen.getByRole('button', { name: /start listening/i })) })
+    return { earcons, recv, state, start }
+  }
+  const kinds = (e: { play: ReturnType<typeof vi.fn> }) => e.play.mock.calls.map(c => c[0])
+
+  it('unlocks inside the Start press, and plays nothing yet', () => {
+    const t = withEarcons()
+    expect(t.earcons.unlock).not.toHaveBeenCalled()
+    t.start()
+    expect(t.earcons.unlock).toHaveBeenCalledTimes(1)
+    expect(kinds(t.earcons)).toEqual([])
+  })
+  it('joined: one tone when the class is live on arrival', async () => {
+    const t = withEarcons(); t.start()
+    await t.recv({ type: 'status', live: true })
+    await t.recv({ type: 'status', live: true })
+    expect(kinds(t.earcons)).toEqual(['join'])
+  })
+  it('class started: its own tone when it goes live after waiting', async () => {
+    const t = withEarcons(); t.start()
+    await t.recv({ type: 'status', live: false })
+    expect(kinds(t.earcons)).toEqual([])
+    await t.recv({ type: 'status', live: true })
+    expect(kinds(t.earcons)).toEqual(['start'])
+  })
+  it('dropped and back, and no second join when the status is resent after back', async () => {
+    const t = withEarcons(); t.start()
+    await t.state('open')
+    await t.recv({ type: 'status', live: true })
+    await t.state('reconnecting')
+    await t.state('open')
+    await t.recv({ type: 'status', live: true })
+    expect(kinds(t.earcons)).toEqual(['join', 'drop', 'back'])
+  })
+  it('one drop tone per outage, however many retries', async () => {
+    const t = withEarcons(); t.start()
+    await t.state('open')
+    await t.state('reconnecting'); await t.state('reconnecting'); await t.state('reconnecting')
+    expect(kinds(t.earcons)).toEqual(['drop'])
+  })
+  it('never on a whisper, a board, a notice, or a repeat', async () => {
+    const t = withEarcons(); t.start()
+    await t.recv({ type: 'whisper', word: 'this', items: [{ phrase: 'x', x: 0.5 }] })
+    await t.recv({ type: 'board', phrases: ['x'] })
+    await t.recv({ type: 'notice', text: 'hello' })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /repeat/i })); await sleep(5) })
+    expect(kinds(t.earcons)).toEqual([])
+  })
+  it('when the phone home already announced the start, the first live status is silent', async () => {
+    const t = withEarcons({}, { autoStart: true, startedText: 'Math 201 started.' })
+    await t.recv({ type: 'status', live: true })
+    expect(kinds(t.earcons)).toEqual([])
+  })
+})
