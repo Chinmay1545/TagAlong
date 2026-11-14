@@ -95,3 +95,23 @@ describe('substituteParts', () => {
     expect(substituteParts('no pointer here', [])).toEqual([{ text: 'no pointer here', hit: false }])
   })
 })
+
+describe('late resolutions (a held "this" whispered after its sentence ended)', () => {
+  it('attach to the segment the word was said in, in word order', () => {
+    const tr = createTranscript()
+    tr.addResolution(res('that', 300, 'b'))
+    tr.addFinal('this cancels with that', 50, 500)
+    expect(tr.addResolution(res('this', 100, 'a'))).toBe(true) // arrives after the final
+    tr.addFinal('next sentence', 900, 1100)
+    const [first, second] = tr.segments()
+    expect(substitute(first.text, first.resolutions)).toBe('A cancels with b')
+    expect(second.resolutions).toEqual([])
+  })
+  it('a resolution for a sentence not finished yet still waits for its final', () => {
+    const tr = createTranscript()
+    tr.addFinal('earlier', 0, 100)
+    expect(tr.addResolution(res('this', 900, 'a'))).toBe(false)
+    tr.addFinal('this one', 800, 1000)
+    expect(tr.segments()[1].resolutions).toHaveLength(1)
+  })
+})

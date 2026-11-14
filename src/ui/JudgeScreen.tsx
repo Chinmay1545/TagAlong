@@ -295,7 +295,7 @@ export function JudgeScreen() {
 
   // Resolutions (from P, __tt or live speech) -> overlay highlight, log line, latency median.
   useEffect(() => liveRef.current.onResolution((r, ms) => {
-    transcriptRef.current.addResolution(r)
+    if (transcriptRef.current.addResolution(r)) setSegs(transcriptRef.current.segments()) // a held word joined an earlier sentence
     bcRef.current.send(resolutionMsg(r, ms, !whisperRef.current))
     resolvedRef.current = r.terms
     const tips = tipsRef.current.all()

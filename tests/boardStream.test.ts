@@ -136,6 +136,16 @@ describe('POST /api/read-board streaming (NDJSON)', () => {
 })
 
 describe('provider stream adapters', () => {
+  it('bedrock: a reply cut off at max tokens is an error, not a short last term', async () => {
+    const client = { send: async () => ({ stream: (async function* () { yield { contentBlockDelta: { delta: { text: 'x|100|200|50|5' } } }; yield { messageStop: { stopReason: 'max_tokens' } } })() }) }
+    const it = makeBedrockStreamModel(client as any, 'm')(jpeg)
+    await expect((async () => { for await (const _ of it) { /* drain */ } })()).rejects.toThrow(/truncated/)
+  })
+  it('bedrock: throttling maps to a readable rate-limit error', async () => {
+    const client = { send: async () => { throw Object.assign(new Error('Too many'), { name: 'ThrottlingException' }) } }
+    const it = makeBedrockStreamModel(client as any, 'm')(jpeg)
+    await expect((async () => { for await (const _ of it) { /* drain */ } })()).rejects.toThrow(/rate limited/)
+  })
   it('anthropic: yields text deltas from messages.stream and checks the stop reason', async () => {
     const calls: any[] = []
     const events = [

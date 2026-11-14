@@ -18,6 +18,13 @@ describe('latexToPlain', () => {
     ['\\left( x \\right)', '( x )'],
     ['\\alpha', 'alpha'],
     ['x_{1}', 'x sub 1'],
+    ['\\frac{a^{2}}{b}', '(a^2)/(b)'],
+    ['\\frac12', '(1)/(2)'],
+    ['\\left\\{x\\right\\}', '(x)'],
+    ['\\pm 3', 'plus or minus 3'],
+    ['x \\le 2', 'x less than or equal to 2'],
+    ['\\infty', 'infinity'],
+    ['a \\div b', 'a divided by b'],
   ])('%s -> %s', (latex, plain) => expect(latexToPlain(latex)).toBe(plain))
 })
 
@@ -39,6 +46,14 @@ describe('phraseFor', () => {
   it('speaks the LaTeX and adds where it is', () => {
     expect(phraseFor('\\frac{a}{b}', box(0.8, 0.8))).toBe('the a over b on the bottom right')
     expect(phraseFor('x^2', box(0.5, 0.2))).toBe('the x squared on top')
+  })
+  it('speaks everyday LaTeX cleanly (no command names, no doubled "the")', () => {
+    const on = box(0.5, 0.2)
+    expect(phraseFor('\\frac{a^{2}}{b}', on)).toBe('the a squared over b on top')
+    expect(phraseFor('\\sqrt{x}', on)).toBe('the square root of x on top')
+    expect(phraseFor('\\sqrt[3]{x}', on)).toBe('the cube root of x on top')
+    expect(phraseFor('\\sqrt[4]{y}', on)).toBe('the fourth root of y on top')
+    expect(phraseFor('\\pm 3', on)).toBe('the plus or minus 3 on top')
   })
   it('matches the positions in the saved demo board', () => {
     const terms: Term[] = JSON.parse(readFileSync('public/fixtures/board-fraction.json', 'utf8')).terms

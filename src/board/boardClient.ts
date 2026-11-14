@@ -25,19 +25,23 @@ async function readTermStream(body: ReadableStream<Uint8Array>, onTerm?: (t: Ter
     if (line.type === 'term') { terms.push(line.term); onTerm?.(line.term) }
     return false
   }
-  for (;;) {
-    const { value, done } = await reader.read()
-    buf += done ? dec.decode() : dec.decode(value, { stream: true })
-    let nl
-    while ((nl = buf.indexOf('\n')) >= 0) {
-      const raw = buf.slice(0, nl)
-      buf = buf.slice(nl + 1)
-      if (handle(raw)) { void reader.cancel().catch(() => {}); return terms }
+  try {
+    for (;;) {
+      const { value, done } = await reader.read()
+      buf += done ? dec.decode() : dec.decode(value, { stream: true })
+      let nl
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const raw = buf.slice(0, nl)
+        buf = buf.slice(nl + 1)
+        if (handle(raw)) return terms
+      }
+      if (done) {
+        if (handle(buf)) return terms
+        throw new Error('board read incomplete')
+      }
     }
-    if (done) {
-      if (handle(buf)) return terms
-      throw new Error('board read incomplete')
-    }
+  } finally {
+    void reader.cancel().catch(() => {}) // stop downloading on done, error line or bad line
   }
 }
 

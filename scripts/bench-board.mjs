@@ -48,6 +48,7 @@ export async function readReply(response, startMs, now = () => performance.now()
     let firstTermMs
     let error
     let buffer = ''
+    let gotDone = false
     const handleLine = (line) => {
       if (!line.trim()) return
       let msg
@@ -56,7 +57,10 @@ export async function readReply(response, startMs, now = () => performance.now()
         terms++
         if (firstTermMs === undefined) firstTermMs = round(now() - startMs)
       } else if (msg.type === 'error') error = String(msg.error ?? 'error')
-      else if (msg.type === 'done' && typeof msg.count === 'number' && msg.count !== terms) error ??= `done.count ${msg.count} != ${terms} terms`
+      else if (msg.type === 'done') {
+        gotDone = true
+        if (typeof msg.count === 'number' && msg.count !== terms) error ??= `done.count ${msg.count} != ${terms} terms`
+      }
     }
     const decoder = new TextDecoder()
     const reader = response.body.getReader()
@@ -72,6 +76,7 @@ export async function readReply(response, startMs, now = () => performance.now()
     }
     buffer += decoder.decode()
     handleLine(buffer)
+    if (!gotDone) error ??= 'stream ended without a done line'
     const totalMs = round(now() - startMs)
     const out = { terms, firstTermMs, totalMs }
     if (error !== undefined) out.error = error

@@ -98,6 +98,15 @@ describe('readReply', () => {
     expect(r.terms).toBe(1)
     expect(r.error).toBe('model timeout')
   })
+  it('NDJSON cut off before the done line is an error, not a success', async () => {
+    const url = await serve((_q, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/x-ndjson' })
+      res.end(JSON.stringify({ type: 'term', term: term('a') }) + '\n')
+    })
+    const r = await readReply(await fetch(url, { method: 'POST' }), performance.now(), () => performance.now())
+    expect(r.terms).toBe(1)
+    expect(r.error).toMatch(/done/)
+  })
 })
 
 describe('bench', () => {
