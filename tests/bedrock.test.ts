@@ -23,6 +23,10 @@ describe('bedrock board reader', () => {
     const e = Object.assign(new Error('Too many tokens'), { name: 'ThrottlingException' })
     await expect(makeBedrockCallModel(fake(e).client, 'm')(jpeg)).rejects.toThrow(/board reader is rate limited/)
   })
+  it('errors when the one-shot reply was cut off at max tokens', async () => {
+    const out = { ...text('x|100|200|50|5'), stopReason: 'max_tokens' }
+    await expect(makeBedrockCallModel(fake(out).client, 'm')(jpeg)).rejects.toThrow(/truncated/)
+  })
   it('errors on empty reply', async () => {
     await expect(makeBedrockCallModel(fake({ output: {} }).client, 'm')(jpeg)).rejects.toThrow(/no text/)
   })

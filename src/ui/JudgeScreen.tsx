@@ -6,7 +6,8 @@ import type { Box, Resolution, Term } from '../core/types'
 import { startCamera } from '../vision/camera'
 import { keepScreenAwake } from '../vision/wakeLock'
 import { startHandTracker } from '../vision/handTracker'
-import { isFixtureMode, loadFixture } from '../board/boardClient'
+import { loadFixture } from '../board/boardClient'
+import { boardMode, stageFor, mouseToBoard } from '../board/mode'
 import { startBoardLoop, type BoardLoop } from '../board/boardLoop'
 import { createLive } from '../live/live'
 import { createWhisperPlayer } from '../audio/whisper'
@@ -36,10 +37,12 @@ const easeOut = (p: number) => 1 - (1 - p) ** 3
 type Signal = { at: number; terms: Term[]; tip: { x: number; y: number } | null; muted: boolean }
 const LOG_MAX = 50
 
-// Mirroring is opt-in via ?mirror=1. When on, the <video> preview is flipped with CSS scaleX(-1)
+// Demo mode shows the saved photo under its saved boxes; live mode shows the camera and only boxes read from it.
+const stage = stageFor(boardMode(location.search), new URLSearchParams(location.search).get('mirror') === '1')
+// Mirroring is opt-in via ?mirror=1 (live mode only). When on, the <video> preview is flipped with CSS scaleX(-1)
 // (the .mirror class), so the overlay must be drawn in that same displayed space. When off,
 // flipX is the identity. Data stays unmirrored either way; ONLY drawing goes through this flip.
-const mirror = new URLSearchParams(location.search).get('mirror') === '1'
+const mirror = stage.mirror
 const flipX = (x: number, w = 0): number => (mirror ? 1 - (x + w) : x)
 
 function drawBox(ctx: CanvasRenderingContext2D, b: Box, W: number, H: number) {
@@ -124,12 +127,12 @@ export function JudgeScreen() {
   const boardLoopRef = useRef<BoardLoop | null>(null)
   const signalRef = useRef<Signal | null>(null)
   const boardAtRef = useRef<number | null>(null)
-  const fixture = demo || isFixtureMode(location.search)
+  const fixture = stage.fixtureTerms
   const playerRef = useRef<ReturnType<typeof createWhisperPlayer>>(null as never)
   const liveRef = useRef<ReturnType<typeof createLive>>(null as never)
   if (!liveRef.current) {
     playerRef.current = createWhisperPlayer()
-    liveRef.current = createLive({ getTerms: () => termsRef.current, tips: tipsRef.current, player: playerRef.current })
+    liveRef.current = createLive({ getTerms: () => termsRef.current, tips: tipsRef.current, player: playerRef.current, getPendingRegion: () => boardLoopRef.current?.pendingRegion() ?? null })
   }
   const latenciesRef = useRef<number[]>([])
   const segRef = useRef(0)
@@ -176,6 +179,7 @@ export function JudgeScreen() {
     boardAtRef.current = performance.now()
     setTermCount(terms.length)
     prepare(terms)
+    liveRef.current.checkHeld() // a "this" said before this box was read can be whispered now
   }
 
   // Startup: camera -> hand tracker -> board loop (or fixture). Cancel-safe.
@@ -207,7 +211,7 @@ export function JudgeScreen() {
         const stop = await startHandTracker(video, s => tipsRef.current.push(s))
         if (cancelled) { stop(); return }
         stopTracker = stop
-        if (!fixture) boardLoopRef.current = startBoardLoop(video, tipsRef.current, setTerms)
+        if (stage.boardLoop) boardLoopRef.current = startBoardLoop(video, tipsRef.current, setTerms)
       } catch (e) {
         if (!cancelled) setCamError((e as Error).message)
       }
@@ -215,6 +219,7 @@ export function JudgeScreen() {
 
     const stats = setInterval(() => {
       const now = performance.now()
+      liveRef.current.checkHeld() // gives up on held words that waited too long
       setFps(tipsRef.current.window(now - 1000, now).length)
       const at = boardAtRef.current
       setBoardAgo(fixture ? 'fixture' : at === null ? 'none' : `${((now - at) / 1000).toFixed(0)}s ago`)
@@ -290,7 +295,7 @@ export function JudgeScreen() {
 
   // Resolutions (from P, __tt or live speech) -> overlay highlight, log line, latency median.
   useEffect(() => liveRef.current.onResolution((r, ms) => {
-    transcriptRef.current.addResolution(r)
+    if (transcriptRef.current.addResolution(r)) setSegs(transcriptRef.current.segments()) // a held word joined an earlier sentence
     bcRef.current.send(resolutionMsg(r, ms, !whisperRef.current))
     resolvedRef.current = r.terms
     const tips = tipsRef.current.all()
@@ -446,11 +451,16 @@ export function JudgeScreen() {
       <Readiness />
       <section className="stage-wrap">
         <div className="viewfinder rise" style={step(1)}>
-          <div className="stage">
-            <video ref={videoRef} className={mirror ? 'mirror' : undefined} playsInline muted />
+          <div className="stage" onPointerMove={stage.photo ? e => {
+            // Demo: the mouse points at the saved photo (the camera still tracks a real hand too).
+            const p = mouseToBoard(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect())
+            if (p) tipsRef.current.push({ t: performance.now(), ...p })
+          } : undefined}>
+            <video ref={videoRef} className={mirror ? 'mirror' : stage.photo ? 'behind-photo' : undefined} playsInline muted />
+            {stage.photo && <img className="demo-photo" src={stage.photo} alt="Saved demo board" />}
             <canvas ref={canvasRef} />
           </div>
-          <span className="vf-tag vf-src"><span className="dot" aria-hidden="true" />{fixture ? 'FIXTURE' : 'LIVE'}</span>
+          <span className="vf-tag vf-src"><span className="dot" aria-hidden="true" />{stage.photo ? 'DEMO' : 'LIVE'}</span>
           <span className="vf-tag vf-fps">{fps} FPS</span>
         </div>
         <div className="kbd-strip rise" style={step(2)}>
