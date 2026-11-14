@@ -33,15 +33,47 @@ describe('parseBoardResponse', () => {
   })
   it('drops bad terms and renumbers', () => {
     const good = (l: string) => t(l, 'the ' + l, { x: 0.1, y: 0.1, w: 0.1, h: 0.1 })
-    const r = parseBoardResponse(wrap(good('a'), { latex: 'b', box: { x: 0.1, y: 0.1, w: 0.1, h: 0.1 } }, good('c')))
+    const r = parseBoardResponse(wrap(good('a'), { latex: 'b', phrase: 'the b' }, good('c'))) // no box
     expect(r.map(x => [x.id, x.latex])).toEqual([[1, 'a'], [2, 'c']])
     expect(parseBoardResponse(wrap(t('a', 'p', { x: 1.2, y: 0.1, w: 0.1, h: 0.1 })))).toEqual([])
     expect(parseBoardResponse(wrap(t('a', 'p', { x: 0.1, y: 0.1, w: 0, h: 0.1 })))).toEqual([])
     expect(parseBoardResponse(wrap(t('a', '', { x: 0.1, y: 0.1, w: 0.1, h: 0.1 })))).toEqual([])
     expect(parseBoardResponse(wrap(t('a', 'p', { x: 'q', y: 0.1, w: 0.1, h: 0.1 })))).toEqual([])
   })
-  it('exports the prompt', () => {
+  it('exports the prompt: compact lines, no phrase', () => {
     expect(BOARD_PROMPT.startsWith('You are reading a whiteboard photo')).toBe(true)
-    expect(BOARD_PROMPT.endsWith('reply {"terms":[]}.')).toBe(true)
+    expect(BOARD_PROMPT).toContain('latex|x|y|w|h')
+    expect(BOARD_PROMPT).toContain('0 to 1000')
+    expect(BOARD_PROMPT).not.toMatch(/phrase/i)
+    expect(BOARD_PROMPT.endsWith('reply with the single word EMPTY.')).toBe(true)
+  })
+  it('old JSON without a phrase gets one built from the LaTeX and position', () => {
+    expect(parseBoardResponse(wrap({ latex: 'x^2', box: { x: 0.45, y: 0.15, w: 0.1, h: 0.1 } }))).toEqual([
+      { id: 1, latex: 'x^2', phrase: 'the x squared on top', box: { x: 0.45, y: 0.15, w: 0.1, h: 0.1 } },
+    ])
+  })
+})
+
+describe('parseBoardResponse: compact line format', () => {
+  it('parses latex|x|y|w|h in thousandths and builds the phrase', () => {
+    expect(parseBoardResponse('2x|237|211|95|150\n(x + 3)|439|211|231|153\n')).toEqual([
+      { id: 1, latex: '2x', phrase: 'the 2 x on top left', box: { x: 0.237, y: 0.211, w: 0.095, h: 0.15 } },
+      { id: 2, latex: '(x + 3)', phrase: 'the x plus 3 on top', box: { x: 0.439, y: 0.211, w: 0.231, h: 0.153 } },
+    ])
+  })
+  it('keeps pipes inside the LaTeX (absolute value): the last four fields are the box', () => {
+    expect(parseBoardResponse('|x|-1|100|100|100|100')[0].latex).toBe('|x|-1')
+  })
+  it('ignores fences, prose, blank and broken lines; EMPTY means no terms', () => {
+    const r = parseBoardResponse('```\nHere are the terms:\n2x|100|100|50|50\n\nbad|1|2\ny|a|b|c|d\n|100|100|50|50\n```')
+    expect(r.map(t => t.latex)).toEqual(['2x'])
+    expect(parseBoardResponse('EMPTY')).toEqual([])
+  })
+  it('clamps boxes to the frame and drops empty ones', () => {
+    expect(parseBoardResponse('a|950|100|200|100')[0].box).toEqual({ x: 0.95, y: 0.1, w: expect.closeTo(0.05) as unknown as number, h: 0.1 })
+    expect(parseBoardResponse('a|100|100|0|100')).toEqual([])
+  })
+  it('accepts 0-1 decimals too, in case the model ignores the scale', () => {
+    expect(parseBoardResponse('a|0.2|0.2|0.1|0.1')[0].box).toEqual({ x: 0.2, y: 0.2, w: 0.1, h: 0.1 })
   })
 })

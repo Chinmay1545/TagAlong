@@ -3,6 +3,7 @@ import { shouldReadBoard, startBoardLoop } from '../src/board/boardLoop'
 import { isFixtureMode, loadFixture, readBoard } from '../src/board/boardClient'
 import { TipBuffer } from '../src/core/tipBuffer'
 import type { Term } from '../src/core/types'
+import { BOARD_INTERVAL_MS, SETTLE_MS } from '../src/core/config'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -58,8 +59,9 @@ function harness() {
   const shown: Term[][] = []
   vi.useFakeTimers()
   const loop = startBoardLoop(video, new TipBuffer(), t => shown.push(t))
-  const tick = () => vi.advanceTimersByTimeAsync(3000)
-  return { cam, replies, shown, reads: () => fetchMock.mock.calls.length, tick, stop: loop.stop, reset: loop.reset, fetchMock }
+  // Long enough for a changed picture to settle and be read (one check to see the change, then SETTLE_MS of stillness).
+  const tick = () => vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS + SETTLE_MS)
+  return { cam, replies, shown, reads: () => fetchMock.mock.calls.length, tick, stop: loop.stop, reset: loop.reset, pending: loop.pendingRegion, fetchMock }
 }
 
 const fraction: Term[] = [
@@ -135,6 +137,189 @@ describe('board loop: reset button', () => {
     answer({ ok: true, json: async () => ({ terms: fraction }) })
     await vi.advanceTimersByTimeAsync(0)
     expect(h.shown).toEqual([[]]) // the stale board did not come back
+    h.stop()
+  })
+})
+
+// A streamed reply the test feeds by hand: push(line objects), then close().
+function manualStream() {
+  let ctl!: ReadableStreamDefaultController<Uint8Array>
+  const body = new ReadableStream<Uint8Array>({ start(c) { ctl = c } })
+  return {
+    response: new Response(body, { headers: { 'content-type': 'application/x-ndjson' } }),
+    push: (...lines: unknown[]) => ctl.enqueue(new TextEncoder().encode(lines.map(l => JSON.stringify(l) + '\n').join(''))),
+    close: () => ctl.close(),
+  }
+}
+
+describe('board loop: streamed reads', () => {
+  const N: Term = { id: 1, latex: 'y', phrase: 'the y on the right', box: { x: 0.6, y: 0.2, w: 0.1, h: 0.1 } }
+
+  it('draws each term as it arrives, on top of the previous board', async () => {
+    const h = harness()
+    h.replies.push(fraction)
+    await h.tick()
+    const s = manualStream()
+    h.fetchMock.mockImplementationOnce(async () => s.response as never)
+    h.cam.scene = 120
+    await h.tick() // read starts
+    s.push({ type: 'term', term: N })
+    await vi.advanceTimersByTimeAsync(0)
+    const partial = h.shown.at(-1)!
+    expect(partial.map(t => t.latex)).toEqual(['2x', '2x', 'y']) // old boxes kept while the read is running
+    expect(new Set(partial.map(t => t.id)).size).toBe(3) // no id clash
+    s.push({ type: 'done', count: 1, ms: 1 })
+    s.close()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(h.shown.at(-1)!.map(t => t.latex)).toEqual(['y'])
+    h.stop()
+  })
+
+  it('a wobbly camera re-read keeps the same term objects (boxes do not jump)', async () => {
+    const h = harness()
+    h.replies.push(fraction)
+    await h.tick()
+    h.cam.scene = 60 // the picture moved a little
+    h.replies.push(fraction.map((t, i) => ({ ...t, id: 9 - i, box: { ...t.box, x: t.box.x + 0.01 } })))
+    await h.tick()
+    expect(h.reads()).toBe(2)
+    const last = h.shown.at(-1)!
+    expect(last).toHaveLength(2)
+    last.forEach((t, i) => expect(t).toBe(h.shown[0][i]))
+    h.stop()
+  })
+
+  it('a read that fails half way puts the previous board back', async () => {
+    const h = harness()
+    h.replies.push(fraction)
+    await h.tick()
+    const s = manualStream()
+    h.fetchMock.mockImplementationOnce(async () => s.response as never)
+    h.cam.scene = 120
+    await h.tick()
+    s.push({ type: 'term', term: N })
+    await vi.advanceTimersByTimeAsync(0)
+    s.push({ type: 'error', error: 'board read failed' })
+    s.close()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(h.shown.at(-1)).toEqual(fraction)
+    h.stop()
+  })
+
+  it('a term streamed after reset is ignored', async () => {
+    const h = harness()
+    const s = manualStream()
+    h.fetchMock.mockImplementationOnce(async () => s.response as never)
+    await h.tick()
+    h.reset()
+    s.push({ type: 'term', term: N }, { type: 'done', count: 1, ms: 1 })
+    s.close()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(h.shown).toEqual([[]])
+    h.stop()
+  })
+})
+
+describe('board loop: 1 s checks (1.4)', () => {
+  it('checks the board every second', () => expect(BOARD_INTERVAL_MS).toBe(1000))
+
+  it('a change is picked up by the next check and read once it settles', async () => {
+    const h = harness()
+    h.replies.push(fraction)
+    await h.tick()
+    expect(h.reads()).toBe(1)
+    h.cam.scene = 120
+    await vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS + SETTLE_MS) // seen on the next check, read once it has settled (1.9)
+    expect(h.reads()).toBe(2)
+    h.stop()
+  })
+
+  it('never has more than one read in flight, however long it takes', async () => {
+    const h = harness()
+    let answer!: (v: unknown) => void
+    h.fetchMock.mockImplementationOnce(() => new Promise(r => { answer = r }) as never)
+    await h.tick()
+    for (let i = 0; i < 8; i++) { h.cam.scene = 60 + i * 20; await h.tick() } // board keeps changing during a slow read
+    expect(h.reads()).toBe(1)
+    answer({ ok: true, json: async () => ({ terms: fraction }) })
+    await vi.advanceTimersByTimeAsync(0)
+    await h.tick()
+    expect(h.reads()).toBe(2) // the next check reads again once the first is done
+    h.stop()
+  })
+})
+
+describe('board loop: wait for the picture to settle (1.9)', () => {
+  it('waits about a second of stillness after a change', () => expect(SETTLE_MS).toBe(1000))
+
+  it('does not read while the picture keeps changing (teacher still writing)', async () => {
+    const h = harness()
+    for (let i = 0; i < 6; i++) { h.cam.scene = 40 + i * 20; await vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS) }
+    expect(h.reads()).toBe(0)
+    h.replies.push(fraction)
+    await vi.advanceTimersByTimeAsync(SETTLE_MS) // still for SETTLE_MS
+    expect(h.reads()).toBe(1)
+    expect(h.shown).toEqual([fraction])
+    h.stop()
+  })
+
+  it('a picture that moves and comes back to what was read is not read again', async () => {
+    const h = harness()
+    h.replies.push(fraction)
+    await h.tick()
+    h.cam.scene = 200 // someone walks past
+    await vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS)
+    h.cam.scene = 50 // gone again, board unchanged
+    await vi.advanceTimersByTimeAsync(3 * BOARD_INTERVAL_MS)
+    expect(h.reads()).toBe(1)
+    h.stop()
+  })
+
+  it('the first read of a still board starts one second in', async () => {
+    const h = harness()
+    await vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS)
+    expect(h.reads()).toBe(0)
+    await vi.advanceTimersByTimeAsync(SETTLE_MS)
+    expect(h.reads()).toBe(1)
+    h.stop()
+  })
+})
+
+describe('board loop: pending change region (for 1.5)', () => {
+  it('reports the changed area while it is unread or being read, null once read', async () => {
+    const h = harness()
+    expect(h.pending()).toBeNull() // nothing seen yet
+    let answer!: (v: unknown) => void
+    h.fetchMock.mockImplementationOnce(() => new Promise(r => { answer = r }) as never)
+    await vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS)
+    expect(h.pending()).toEqual({ x: 0, y: 0, w: 1, h: 1 }) // never read: the whole board is pending
+    await vi.advanceTimersByTimeAsync(SETTLE_MS) // read starts
+    expect(h.reads()).toBe(1)
+    expect(h.pending()).toEqual({ x: 0, y: 0, w: 1, h: 1 })
+    answer({ ok: true, json: async () => ({ terms: fraction }) })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(h.pending()).toBeNull()
+    h.cam.scene = 200 // whole picture changes (uniform test frames)
+    await vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS)
+    expect(h.pending()).toEqual({ x: 0, y: 0, w: 1, h: 1 })
+    h.stop()
+  })
+})
+
+describe('board loop: every box gets its own spoken phrase', () => {
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
+
+  it('never shows two terms with the same phrase, so both whispers of "this cancels with that" play', async () => {
+    const h = harness()
+    h.replies.push([
+      { id: 1, latex: '2x', phrase: 'the 2 x in the middle', box: { x: 0.45, y: 0.38, w: 0.1, h: 0.06 } },
+      { id: 2, latex: '2x', phrase: 'the 2 x in the middle', box: { x: 0.45, y: 0.48, w: 0.1, h: 0.06 } },
+    ])
+    h.cam.scene = 120
+    await h.tick()
+    const last = h.shown.at(-1)!
+    expect(last).toHaveLength(2)
+    expect(new Set(last.map(x => x.phrase)).size).toBe(2)
     h.stop()
   })
 })

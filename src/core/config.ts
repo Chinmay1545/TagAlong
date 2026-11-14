@@ -1,8 +1,11 @@
 export const MAX_DIST = 0.06
+export const MATCH_DIST = 0.06 // a re-read term whose centre moved less than this (same LaTeX) is the same term
 export const TIP_WINDOW_MS = 500
 export const TIP_BUFFER_MS = 3000
-export const BOARD_INTERVAL_MS = 3000
+export const BOARD_INTERVAL_MS = 1000 // how often the board is checked for changes (cheap 64x36 diff; a read only starts when it changed)
 export const HAND_RECENT_MS = 300
+export const SETTLE_MS = 1000 // a changed picture must stay still this long before it is read (pen lifted, camera steady)
+export const HOLD_MAX_MS = 8000 // a "this" said at ink not read yet waits this long for its box (settle + hand away + read), then goes silent
 export const EMPTY_READS_TO_CLEAR = 2 // one empty read may be a person in front of the board; two in a row means it was erased
 export const FRAME_DIFF_THRESHOLD = 8
 export const POINTER_WORDS = ['this', 'that', 'here', 'these', 'those'] as const
