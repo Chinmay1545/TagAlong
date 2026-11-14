@@ -107,7 +107,7 @@ export function anthropicCallTextFromEnv(env: Record<string, string | undefined>
 }
 
 export function anthropicCallModelFromEnv(env: Record<string, string | undefined>) {
-  // Client created lazily so startup never needs a key; timeout keeps a stuck read from blocking the 3 s board loop forever.
+  // Client created lazily so startup never needs a key; timeout keeps a stuck read from blocking the board loop forever.
   let client: Anthropic | undefined
   const model = env.ANTHROPIC_MODEL_ID?.trim() || ANTHROPIC_DEFAULT_MODEL
   return (jpeg: Buffer) => {

@@ -3,6 +3,7 @@ import { shouldReadBoard, startBoardLoop } from '../src/board/boardLoop'
 import { isFixtureMode, loadFixture, readBoard } from '../src/board/boardClient'
 import { TipBuffer } from '../src/core/tipBuffer'
 import type { Term } from '../src/core/types'
+import { BOARD_INTERVAL_MS } from '../src/core/config'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -58,7 +59,7 @@ function harness() {
   const shown: Term[][] = []
   vi.useFakeTimers()
   const loop = startBoardLoop(video, new TipBuffer(), t => shown.push(t))
-  const tick = () => vi.advanceTimersByTimeAsync(3000)
+  const tick = () => vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS) // one board check
   return { cam, replies, shown, reads: () => fetchMock.mock.calls.length, tick, stop: loop.stop, reset: loop.reset, fetchMock }
 }
 
@@ -214,6 +215,35 @@ describe('board loop: streamed reads', () => {
     s.close()
     await vi.advanceTimersByTimeAsync(0)
     expect(h.shown).toEqual([[]])
+    h.stop()
+  })
+})
+
+describe('board loop: 1 s checks (1.4)', () => {
+  it('checks the board every second', () => expect(BOARD_INTERVAL_MS).toBe(1000))
+
+  it('a change is picked up by the next check, about a second later', async () => {
+    const h = harness()
+    h.replies.push(fraction)
+    await h.tick()
+    expect(h.reads()).toBe(1)
+    h.cam.scene = 120
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(h.reads()).toBe(2)
+    h.stop()
+  })
+
+  it('never has more than one read in flight, however long it takes', async () => {
+    const h = harness()
+    let answer!: (v: unknown) => void
+    h.fetchMock.mockImplementationOnce(() => new Promise(r => { answer = r }) as never)
+    await h.tick()
+    for (let i = 0; i < 8; i++) { h.cam.scene = 60 + i * 20; await h.tick() } // board keeps changing during a slow read
+    expect(h.reads()).toBe(1)
+    answer({ ok: true, json: async () => ({ terms: fraction }) })
+    await vi.advanceTimersByTimeAsync(0)
+    await h.tick()
+    expect(h.reads()).toBe(2) // the next check reads again once the first is done
     h.stop()
   })
 })
