@@ -114,9 +114,9 @@ export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms
     stop: () => { stopped = true; clearInterval(id) },
     // Reset button: clear the boxes now and forget the last frame, so the next tick reads the board from scratch.
     reset: () => { generation++; lockedOn = false; lastRead = null; emptyReads = 0; confirm = false; show([]) },
-    lock: on => { lockedOn = on },
+    lock: on => { lockedOn = on; if (on) generation++ }, // a read in flight is dropped: the boxes must not change once locked
     locked: () => lockedOn,
-    reading: () => inFlight,
+    reading: () => inFlight && !lockedOn,
     pendingRegion: () => lockedOn ? null : reading ?? (lastSeen === null ? null : lastRead === null ? FULL : changedRegion(lastRead, lastSeen)),
   }
 }

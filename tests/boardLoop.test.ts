@@ -574,3 +574,23 @@ describe('board loop: reading state', () => {
     expect(h.reading()).toBe(false)
   })
 })
+
+describe('board loop: lock during a read', () => {
+  it('a read in flight when locked is ignored, reading() is false, and a later read applies after unlock', async () => {
+    const h = harness()
+    let answer!: (v: unknown) => void
+    h.fetchMock.mockImplementationOnce(() => new Promise(r => { answer = r }) as never)
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(h.reading()).toBe(true)
+    h.lock(true)
+    expect(h.reading()).toBe(false)
+    answer({ ok: true, json: async () => ({ terms: fraction }) })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.shown).toEqual([])
+    expect(h.reading()).toBe(false)
+    h.lock(false)
+    h.replies.push(fraction)
+    await h.tick()
+    expect(h.shown.at(-1)).toEqual(fraction)
+  })
+})
