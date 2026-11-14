@@ -10,15 +10,26 @@ export function boxDistance(box: Box, x: number, y: number): number {
   return Math.hypot(dx, dy)
 }
 
+// The term the point is on. Inside more than one box (a bracket group and a term in it): the smallest box wins,
+// so pointing at y inside (2x+y) gives y. Inside none: the nearest box within maxDist. Ties go to the lowest id.
 export function termAt(terms: Term[], x: number, y: number, maxDist = MAX_DIST): Term | null {
   let best: Term | null = null
   let bestD = Infinity
+  let bestArea = Infinity
   for (const term of terms) {
     const d = boxDistance(term.box, x, y)
     if (d > maxDist) continue
-    if (d < bestD - EPS || (Math.abs(d - bestD) <= EPS && best && term.id < best.id)) {
+    const area = term.box.w * term.box.h
+    const sameD = Math.abs(d - bestD) <= EPS
+    const inside = d <= EPS
+    const better =
+      d < bestD - EPS ||
+      (sameD && inside && area < bestArea - EPS) ||
+      (sameD && (!inside || Math.abs(area - bestArea) <= EPS) && best !== null && term.id < best.id)
+    if (better) {
       best = term
       bestD = d
+      bestArea = area
     }
   }
   return best

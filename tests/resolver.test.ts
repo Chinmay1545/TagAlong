@@ -30,6 +30,38 @@ describe('boxDistance / termAt', () => {
   })
 })
 
+// Bracket bug (2.2): "(2x+y)" is read as a group box with its inner terms boxed too.
+describe('termAt: pointer inside more than one box', () => {
+  const GROUP: Term = { id: 1, latex: '(2x+y)', phrase: 'the group', box: { x: 0.2, y: 0.2, w: 0.3, h: 0.1 } }
+  const TWO_X: Term = { id: 2, latex: '2x', phrase: 'the 2x', box: { x: 0.22, y: 0.22, w: 0.08, h: 0.06 } }
+  const Y: Term = { id: 3, latex: 'y', phrase: 'the y', box: { x: 0.4, y: 0.22, w: 0.06, h: 0.06 } }
+  it('on y inside (2x+y): picks y, not the group', () => {
+    expect(termAt([GROUP, TWO_X, Y], 0.43, 0.25)?.latex).toBe('y')
+    expect(termAt([Y, TWO_X, GROUP], 0.43, 0.25)?.latex).toBe('y') // array order does not matter
+  })
+  it('the group has the older (lower) id and still loses to the smaller box', () => {
+    const lateInner: Term = { ...Y, id: 9 }
+    expect(termAt([GROUP, lateInner], 0.43, 0.25)?.id).toBe(9)
+  })
+  it('inside the group but on no inner term (the plus sign): the group', () => {
+    expect(termAt([GROUP, TWO_X, Y], 0.35, 0.25)?.latex).toBe('(2x+y)')
+  })
+  it('three boxes nested: the innermost wins', () => {
+    const WHOLE: Term = { id: 0, latex: '3(2x+y)', phrase: 'the whole thing', box: { x: 0.1, y: 0.15, w: 0.45, h: 0.2 } }
+    expect(termAt([WHOLE, GROUP, Y], 0.43, 0.25)?.latex).toBe('y')
+  })
+  it('same-size boxes that both contain the pointer: lowest id wins', () => {
+    const twin: Term = { ...Y, id: 2, latex: 'twin' }
+    expect(termAt([Y, twin], 0.43, 0.25)?.id).toBe(2)
+  })
+  it('resolvePointer uses the same rule', () => {
+    const buf = new TipBuffer()
+    for (let t = 300; t <= 700; t += 50) buf.push({ t, x: 0.43, y: 0.25 })
+    const r = resolvePointer({ word: 'this', t: 500, isPointer: true }, [GROUP, TWO_X, Y], buf)
+    expect(r.terms.map(t => t.latex)).toEqual(['y'])
+  })
+})
+
 describe('steadiestTip', () => {
   const track: TipSample[] = Array.from({ length: 11 }, (_, i) => {
     const t = i * 100
