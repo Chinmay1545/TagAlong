@@ -3,6 +3,7 @@ export type RelayStatus = 'connecting' | 'open' | 'reconnecting' | 'closed'
 export const RECONNECT_MS = [500, 1000, 2000, 4000, 5000]
 export const PING_MS = 10000
 export const DEAD_MS = 25000
+export const REPLACED = 4001 // server/rooms.ts: another tab took this room over; reconnecting would steal it back
 
 export const relayUrl = (loc: { protocol: string; host: string }, params: Record<string, string>): string =>
   `${loc.protocol === 'https:' ? 'wss:' : 'ws:'}//${loc.host}/ws/room?${new URLSearchParams(params)}`
@@ -66,7 +67,19 @@ export function createRelay(o: Opts) {
       if (m.type === 'pong') { if (typeof m.t === 'number') o.onRtt?.(now() - m.t) }
       else o.onMessage(m)
     }
-    sock.onclose = () => { if (ws === sock) lost() }
+    sock.onclose = (e?: { code?: number }) => {
+      if (ws !== sock) return
+      if (e?.code === REPLACED) return shut()
+      lost()
+    }
+  }
+
+  function shut() {
+    done = true
+    clearTimeout(retry)
+    detach()
+    doc?.removeEventListener('visibilitychange', onVisible)
+    set('closed')
   }
 
   const onVisible = () => {
@@ -83,13 +96,7 @@ export function createRelay(o: Opts) {
       if (status !== 'open' || !ws) return false
       try { ws.send(JSON.stringify(m)); return true } catch { return false }
     },
-    close() {
-      done = true
-      clearTimeout(retry)
-      detach()
-      doc?.removeEventListener('visibilitychange', onVisible)
-      set('closed')
-    },
+    close: shut,
     status: () => status,
   }
 }

@@ -7,7 +7,9 @@ export const TOKEN_RE = /^[A-Za-z0-9_-]{16,64}$/
 export const roomToken = (secret: string, name: string): string =>
   createHmac('sha256', secret).update(name.trim().toLowerCase()).digest('base64url').slice(0, 22)
 
-export type Sock = { send(data: string): void; close(): void }
+export type Sock = { send(data: string): void; close(code?: number): void }
+// Close code for a teacher socket replaced by a newer tab on the same class: the old tab must not reconnect.
+export const REPLACED = 4001
 export type Hub = {
   addTeacher(room: string, name: string, s: Sock): void
   addStudent(s: Sock, rooms: string[]): string
@@ -50,7 +52,7 @@ export function createHub(opts: { rateMax?: number; rateWindowMs?: number; now?:
     addTeacher(room, name, s) {
       const old = teachers.get(room)
       teachers.set(room, { name, s }) // set first so old's late close event cannot evict the new one
-      if (old && old.s !== s) try { old.s.close() } catch { /* already dead */ }
+      if (old && old.s !== s) try { old.s.close(REPLACED) } catch { /* already dead */ }
       tellStudents(room)
       tellTeacher(room)
     },

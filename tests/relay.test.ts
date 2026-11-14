@@ -5,7 +5,7 @@ class FakeWS {
   static instances: FakeWS[] = []
   onopen: (() => void) | null = null
   onmessage: ((e: { data: string }) => void) | null = null
-  onclose: (() => void) | null = null
+  onclose: ((e?: { code: number }) => void) | null = null
   onerror: (() => void) | null = null
   sent: string[] = []
   closed = false
@@ -14,7 +14,7 @@ class FakeWS {
   close() { this.closed = true; this.onclose?.() }
   open() { this.onopen?.() }
   message(o: unknown) { this.onmessage?.({ data: JSON.stringify(o) }) }
-  drop() { this.onclose?.() }
+  drop(code?: number) { this.onclose?.(code === undefined ? undefined : { code }) }
 }
 const last = () => FakeWS.instances[FakeWS.instances.length - 1]
 const WS = FakeWS as unknown as typeof WebSocket
@@ -142,6 +142,17 @@ describe('relay', () => {
     expect(rtts).toEqual([])
     expect(msgs).toEqual([])
     relay.close()
+  })
+
+  it('close code 4001 (replaced by another tab) is final: closed, no reconnect', () => {
+    const { relay, statuses } = make()
+    last().open()
+    last().drop(4001)
+    expect(relay.status()).toBe('closed')
+    expect(statuses.at(-1)).toBe('closed')
+    vi.advanceTimersByTime(60000)
+    expect(FakeWS.instances.length).toBe(1)
+    expect(relay.send({})).toBe(false)
   })
 
   it('close stops reconnecting', () => {

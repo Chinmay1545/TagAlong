@@ -1,6 +1,6 @@
 import express from 'express'
 import type http from 'node:http'
-import { WebSocketServer } from 'ws'
+import { WebSocketServer, type WebSocket } from 'ws'
 import { LOCAL_ACCESS, hostAllowed, keyAllowed, originAllowed, type Access } from './access'
 import { TOKEN_RE, createHub, roomToken, type Hub } from './rooms'
 import { serveUpgrade } from './upgrade'
@@ -20,8 +20,16 @@ export function roomsRouter(secret: string): express.Router {
   return r
 }
 
-export function attachRooms(server: http.Server, opts: { secret: string; access?: Access; hub?: Hub }): Hub {
-  const { secret, access = LOCAL_ACCESS } = opts
+// Clients ping every 10 s; a socket silent for 30 s is gone (phone locked, Wi-Fi lost) and must leave the count.
+export function attachRooms(server: http.Server, opts: { secret: string; access?: Access; hub?: Hub; sweepMs?: number; idleMs?: number }): Hub {
+  const { secret, access = LOCAL_ACCESS, sweepMs = 10000, idleMs = 30000 } = opts
+  const seen = new Map<WebSocket, number>()
+  const sweep = setInterval(() => {
+    const t = Date.now()
+    for (const [ws, at] of seen) if (t - at > idleMs) { seen.delete(ws); ws.terminate() }
+  }, sweepMs)
+  sweep.unref()
+  server.on('close', () => clearInterval(sweep))
   const hub = opts.hub ?? createHub()
   const wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024, verifyClient: ({ origin, req }, cb) => {
     const q = new URL(req.url ?? '/', 'http://x').searchParams
@@ -39,8 +47,10 @@ export function attachRooms(server: http.Server, opts: { secret: string; access?
   serveUpgrade(server, '/ws/room', wss)
   wss.on('connection', (ws, req) => {
     const q = new URL(req.url ?? '/', 'http://x').searchParams
-    const sock = { send: (d: string) => ws.send(d), close: () => ws.close() }
-    const dead = () => hub.remove(sock)
+    const sock = { send: (d: string) => ws.send(d), close: (code?: number) => ws.close(code) }
+    const dead = () => { seen.delete(ws); hub.remove(sock) }
+    seen.set(ws, Date.now())
+    ws.on('message', () => seen.set(ws, Date.now()))
     if (q.get('role') === 'teacher') {
       hub.addTeacher(q.get('room')!, q.get('name')!.trim(), sock)
       ws.on('message', d => hub.fromTeacher(sock, String(d)))

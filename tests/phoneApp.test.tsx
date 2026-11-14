@@ -26,6 +26,10 @@ const mount = (voice?: string, name = 'Math 201') => {
   if (voice) data.set('tagalong:voice', voice)
   render(<PhoneApp token={TOKEN} name={name} deps={deps()} />)
 }
+// started and joined to the live class
+const joined = (voice = 'screenreader') => { mount(voice); press('Start listening to Math 201'); rooms([TOKEN]) }
+const has = (name: string | RegExp) => screen.queryByRole('button', { name }) !== null
+const phase = () => document.querySelector('.p-stage')!.getAttribute('data-phase')
 
 beforeEach(() => {
   sent = []
@@ -151,12 +155,11 @@ describe('phone app', () => {
   })
 
   it('repeat last re-announces', () => {
-    mount('screenreader')
-    press('Start listening to Math 201')
+    joined()
     press('Repeat last')
     expect(said()).toBe('Nothing to repeat yet.')
     msg({ type: 'assist', text: 'Dr. Rao is at the board' })
-    rooms([TOKEN])
+    msg({ type: 'rooms', live: [TOKEN], names: {} })
     const before = live().textContent
     press('Repeat last')
     expect(said()).toBe('Dr. Rao is at the board')
@@ -164,8 +167,7 @@ describe('phone app', () => {
   })
 
   it('what is happening asks and says Looking', () => {
-    mount('screenreader')
-    press('Start listening to Math 201')
+    joined()
     press("What's happening?")
     expect(sent).toContainEqual({ type: 'ask' })
     expect(said()).toBe('Looking.')
@@ -173,8 +175,7 @@ describe('phone app', () => {
 
   it('undo mark within 5 seconds', () => {
     vi.useFakeTimers()
-    mount('screenreader')
-    press('Start listening to Math 201')
+    joined()
     press("Mark: I didn't get this")
     expect(sent).toContainEqual({ type: 'bookmark' })
     press('Undo mark')
@@ -222,8 +223,7 @@ const raw = () => live().textContent!
 
 describe('phone app: pinned behaviours', () => {
   it('an identical announcement twice still changes the live region text', () => {
-    mount('screenreader')
-    press('Start listening to Math 201')
+    joined()
     msg({ type: 'assist', text: 'Look left' })
     const a = raw()
     msg({ type: 'assist', text: 'Look left' })
@@ -235,11 +235,11 @@ describe('phone app: pinned behaviours', () => {
     expect(said()).toBe('Look left')
   })
 
-  it('open without a prior drop announces nothing', () => {
+  it('open without a prior drop does not say Back', () => {
     mount('screenreader')
     press('Start listening to Math 201')
     status('open')
-    expect(said()).toBe('')
+    expect(said()).toBe('Connecting.')
     expect(earcons.play).not.toHaveBeenCalledWith('back')
   })
 
@@ -255,8 +255,7 @@ describe('phone app: pinned behaviours', () => {
 
   it('unmount closes the relay, releases the wake lock and leaves no timers', () => {
     vi.useFakeTimers()
-    mount('screenreader')
-    press('Start listening to Math 201')
+    joined()
     press(MARK)
     press('Stop listening')
     cleanup()
@@ -278,8 +277,7 @@ describe('phone app: pinned behaviours', () => {
 
   it('undo lasts exactly 5 seconds and a second Mark restarts the window', () => {
     vi.useFakeTimers()
-    mount('screenreader')
-    press('Start listening to Math 201')
+    joined()
     press(MARK)
     act(() => { vi.advanceTimersByTime(4999) })
     expect(screen.getByRole('button', { name: 'Undo mark' })).toBeTruthy()
@@ -346,6 +344,125 @@ describe('phone app: pinned behaviours', () => {
     expect(synth.cancel).toHaveBeenCalledTimes(2) // explicit cancel, then say() cancels before Stopped.
     const last = synth.speak.mock.calls.at(-1)![0]
     expect(last.text).toBe('Stopped.')
+  })
+})
+
+describe('phone app: final fixes', () => {
+  it('the board that answers hello is shown, not announced, so Connected and the tip are heard (screenreader)', () => {
+    joined()
+    const greeting = `Connected to Math 201. ${TIP}`
+    expect(said()).toBe(greeting)
+    msg({ type: 'board', phrases: ['a', 'b'] })
+    expect(said()).toBe(greeting)
+    expect(document.querySelector('.p-big')!.textContent).toBe('a, b')
+    press('Repeat last')
+    expect(said()).toBe('a, b')
+    msg({ type: 'board', phrases: ['c'] }) // later boards speak as usual
+    expect(said()).toBe('c')
+  })
+
+  it('the board after a re-join is quiet too, so Back. is heard', () => {
+    joined()
+    status('reconnecting')
+    status('open')
+    rooms([TOKEN])
+    msg({ type: 'board', phrases: ['a'] })
+    expect(said()).toBe('Back.')
+    expect(document.querySelector('.p-big')!.textContent).toBe('a')
+  })
+
+  it('the hello board is not spoken in speak mode and does not cut off Connected', () => {
+    joined('speak')
+    synth.speak.mockClear(); synth.cancel.mockClear()
+    msg({ type: 'board', phrases: ['a', 'b'] })
+    expect(synth.speak).not.toHaveBeenCalled()
+    expect(synth.cancel).not.toHaveBeenCalled()
+    msg({ type: 'board', phrases: ['c'] })
+    expect(synth.speak.mock.calls.at(-1)![0].text).toBe('c')
+  })
+
+  it('only Stop is offered until the phone has joined, and while it reconnects', () => {
+    mount('screenreader')
+    press('Start listening to Math 201')
+    const controls = ['Repeat last', MARK, "What's happening?"]
+    for (const c of controls) expect(has(c)).toBe(false)
+    expect(has('Stop listening')).toBe(true)
+    rooms([])
+    for (const c of controls) expect(has(c)).toBe(false)
+    rooms([TOKEN])
+    for (const c of controls) expect(has(c)).toBe(true)
+    status('reconnecting')
+    for (const c of controls) expect(has(c)).toBe(false)
+    expect(has('Stop listening')).toBe(true)
+    status('open')
+    for (const c of controls) expect(has(c)).toBe(true)
+  })
+
+  it('Mark and What is happening say Not connected when the send fails', () => {
+    joined()
+    connect.mock.results[0].value.send = () => false
+    press(MARK)
+    expect(said()).toBe('Not connected.')
+    expect(has(MARK)).toBe(true)
+    press("What's happening?")
+    expect(said()).toBe('Not connected.')
+  })
+
+  it('says Connecting. on start and Still trying after 10 s without a connection', () => {
+    vi.useFakeTimers()
+    mount('screenreader')
+    press('Start listening to Math 201')
+    expect(said()).toBe('Connecting.')
+    expect(phase()).toBe('connecting')
+    act(() => { vi.advanceTimersByTime(9999) })
+    expect(said()).toBe('Connecting.')
+    act(() => { vi.advanceTimersByTime(1) })
+    expect(said()).toBe('Still trying to reach the class.')
+    expect(phase()).toBe('trying')
+    rooms([TOKEN])
+    expect(said()).toContain('Connected to Math 201.')
+  })
+
+  it('no Still trying once open, after stop, or after unmount', () => {
+    vi.useFakeTimers()
+    mount('screenreader')
+    press('Start listening to Math 201')
+    status('open')
+    act(() => { vi.advanceTimersByTime(20000) })
+    expect(said()).toBe('Connecting.')
+    press('Stop listening'); press('Press again to stop')
+    press('Start listening to Math 201')
+    press('Stop listening'); press('Press again to stop')
+    act(() => { vi.advanceTimersByTime(20000) })
+    expect(said()).toBe('Stopped.')
+    press('Start listening to Math 201')
+    cleanup()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('the stage names its phase so the placeholder matches: wait, choose, joined', () => {
+    data.set('tagalong:classes', JSON.stringify([{ token: OTHER, name: 'Bio' }, { token: 'q'.repeat(20), name: 'Chem' }]))
+    mount('screenreader')
+    press('Start listening to Math 201')
+    rooms([])
+    expect(phase()).toBe('wait')
+    rooms([OTHER, 'q'.repeat(20)])
+    expect(phase()).toBe('choose')
+    press('Join Bio')
+    expect(phase()).toBe('joined')
+    status('reconnecting')
+    expect(phase()).toBe('dropped')
+  })
+
+  it('wait, then choose, then Join says Connected, not started', () => {
+    data.set('tagalong:classes', JSON.stringify([{ token: OTHER, name: 'Bio' }, { token: 'q'.repeat(20), name: 'Chem' }]))
+    mount('screenreader')
+    press('Start listening to Math 201')
+    rooms([])
+    rooms([OTHER, 'q'.repeat(20)])
+    press('Join Bio')
+    expect(said()).toContain('Connected to Bio.')
+    expect(earcons.play).not.toHaveBeenCalledWith('start')
   })
 })
 

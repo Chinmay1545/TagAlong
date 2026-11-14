@@ -4,10 +4,10 @@ import { createHub, roomToken, TOKEN_RE, type Sock } from '../server/rooms'
 type Msg = Record<string, unknown>
 const sock = () => {
   const got: Msg[] = []
-  const s: Sock & { got: Msg[]; closed: boolean } = {
+  const s: Sock & { got: Msg[]; closed: boolean; code?: number } = {
     got, closed: false,
     send: d => { got.push(JSON.parse(d)) },
-    close() { s.closed = true },
+    close(code) { s.closed = true; s.code = code },
   }
   return s
 }
@@ -116,6 +116,7 @@ describe('hub', () => {
     h.addStudent(s, [A]); say(h, s, { type: 'join', room: A })
     h.addTeacher(A, 'Math', fresh)
     expect(old.closed).toBe(true)
+    expect(old.code).toBe(4001) // tells the old tab it was replaced, so it stops reconnecting
     expect(last(fresh)).toEqual({ type: 'listeners', count: 1 })
     expect(last(s)).toEqual({ type: 'rooms', live: [A], names: { [A]: 'Math' } })
     h.remove(old) // late close event from the replaced socket must not evict the new teacher

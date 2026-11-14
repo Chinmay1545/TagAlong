@@ -4,9 +4,10 @@ import { readFileSync } from 'node:fs'
 const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), 'utf8')
 
 describe('phone look', () => {
-  it('index.html installs as a home-screen app', () => {
+  it('index.html installs as a home-screen app that shares Safari storage', () => {
     const html = read('index.html')
-    expect(html).toContain('<meta name="apple-mobile-web-app-capable" content="yes"')
+    // standalone mode would give the Home Screen icon its own empty storage: no saved classes, no voice choice
+    expect(html).not.toContain('apple-mobile-web-app-capable')
     expect(html).toContain('<meta name="apple-mobile-web-app-title" content="This &amp; That"')
     expect(html).toContain('<meta name="theme-color" content="#09090b"')
     expect(html).toMatch(/name="viewport"[^>]*viewport-fit=cover/)

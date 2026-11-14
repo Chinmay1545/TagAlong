@@ -11,10 +11,10 @@ import { roomToken } from '../server/rooms'
 const secret = 'test-secret'
 const until = async (f: () => boolean) => { for (let i = 0; i < 100 && !f(); i++) await new Promise(r => setTimeout(r, 20)) }
 
-async function withServer(fn: (port: number) => Promise<void>, access?: Access, both = false) {
+async function withServer(fn: (port: number) => Promise<void>, access?: Access, both = false, idle?: { sweepMs: number; idleMs: number }) {
   const server = http.createServer()
   if (both) attachTranscribe(server, async function* () { /* none */ }, access)
-  attachRooms(server, { secret, access })
+  attachRooms(server, { secret, access, ...idle })
   await new Promise<void>(r => server.listen(0, r))
   try { await fn((server.address() as AddressInfo).port) } finally { server.closeAllConnections(); server.close() }
 }
@@ -96,5 +96,25 @@ describe('/ws/room', () => {
       expect([404, 'error', 'closed']).toContain(code)
       expect(code).not.toBeUndefined()
     }, undefined, true)
+  })
+  it('drops sockets that go silent, so dead phones leave the listener count', async () => {
+    await withServer(async p => {
+      const room = roomToken(secret, 'Math')
+      const t = (await open(tUrl(p)))!, tm = listen(t)
+      const s = (await open(sUrl(p, room)))!
+      let closed = false
+      s.on('close', () => { closed = true })
+      s.send(JSON.stringify({ type: 'join', room }))
+      await until(() => tm.some(m => m.type === 'listeners' && m.count === 1))
+      // the teacher keeps pinging and stays; the student goes silent and is cut
+      const keep = setInterval(() => t.send(JSON.stringify({ type: 'ping', t: 1 })), 40)
+      await until(() => closed)
+      await until(() => tm.at(-1)?.type === 'listeners' && tm.at(-1)?.count === 0)
+      clearInterval(keep)
+      expect(closed).toBe(true)
+      expect(t.readyState).toBe(WebSocket.OPEN)
+      expect(tm.filter(m => m.type === 'listeners').at(-1).count).toBe(0)
+      t.close()
+    }, undefined, false, { sweepMs: 50, idleMs: 200 })
   })
 })

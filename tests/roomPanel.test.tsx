@@ -30,4 +30,8 @@ describe('RoomPanel', () => {
     render(<RoomPanel name="Math 201" joinUrl={url} listeners={1} relay="reconnecting" />)
     expect(screen.getByText('phones · reconnecting')).toBeTruthy()
   })
+  it('a room taken over by another tab says so', () => {
+    render(<RoomPanel name="Math 201" joinUrl={url} listeners={0} relay="closed" />)
+    expect(screen.getByText('phones · open in another tab')).toBeTruthy()
+  })
 })

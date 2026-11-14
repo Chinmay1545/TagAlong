@@ -13,6 +13,7 @@ const VOICE_KEY = 'tagalong:voice'
 const TIP_KEY = 'tagalong:tip'
 const TIP = 'Tip: a three-finger triple-tap turns on Screen Curtain to save battery. Listening keeps running.'
 const STOP_ARM_MS = 4000
+const TRYING_MS = 10000
 
 type Deps = {
   connect?: typeof createRelay
@@ -22,6 +23,10 @@ type Deps = {
   awake?: () => () => void
 }
 type Phase = 'idle' | 'wait' | 'choose' | 'joined'
+
+// Each word in its own span so a new whisper can rise word by word; the text content stays exactly the same.
+const words = (text: string) =>
+  text.split(' ').map((w, i) => <span key={i} className="p-w" style={{ '--i': i } as React.CSSProperties}>{i ? ' ' : ''}{w}</span>)
 
 const marked = (n: number, removed?: boolean) =>
   `${removed ? 'Mark removed' : 'Marked'}. ${n} moment${n === 1 ? '' : 's'} to go over later.`
@@ -40,6 +45,7 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
   const [choices, setChoices] = useState<SavedClass[] | null>(null)
   const [undo, setUndo] = useState(false)
   const [armed, setArmed] = useState(false)
+  const [trying, setTrying] = useState(false)
 
   const r = useRef({
     relay: null as ReturnType<typeof createRelay> | null,
@@ -53,6 +59,8 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
     sent: false, // join sent on the current socket
     waited: false,
     dropped: false,
+    quiet: false, // the next board is the reply to hello: show it, do not talk over "Connected to ..."
+    tryT: undefined as ReturnType<typeof setTimeout> | undefined,
     mode: mode,
     last: '',
     undoT: undefined as ReturnType<typeof setTimeout> | undefined,
@@ -67,6 +75,7 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
       r.release?.()
       clearTimeout(r.undoT)
       clearTimeout(r.armT)
+      clearTimeout(r.tryT)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -78,12 +87,13 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
     if (remember) r.last = text
     r.voice?.say(text)
   }
-  const send = (m: object) => r.relay?.send(m)
+  const send = (m: object) => r.relay?.send(m) ?? false
 
   const join = (t: string, ended = '') => {
     send({ type: 'join', room: t })
     send(helloMsg())
     r.sent = true
+    r.quiet = true
     r.joined = t
     r.phase = 'joined'
     setChoices(null)
@@ -119,7 +129,7 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
       ended = 'Class ended. '
     }
     if (r.joined) {
-      if (!r.sent) { send({ type: 'join', room: r.joined }); send(helloMsg()); r.sent = true }
+      if (!r.sent) { send({ type: 'join', room: r.joined }); send(helloMsg()); r.sent = true; r.quiet = true }
       return
     }
     const pick = pickRoom(live, saved, token)
@@ -127,6 +137,7 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
     else if (pick.kind === 'choose') {
       if (r.phase !== 'choose') announce(`${ended}Choose a class.`)
       r.phase = 'choose'
+      r.waited = false // joining from a list is the student's own choice: "Connected to", not "started"
       setChoices(pick.options)
     } else {
       setChoices(null)
@@ -140,7 +151,16 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
     if (m.type === 'rooms') return onRooms(m.live ?? [], m.names ?? {})
     let text: string | null = null
     if (m.type === 'resolution') text = m.muted ? 'Without app: nothing whispered.' : m.phrase ?? 'nothing in reach'
-    else if (m.type === 'board') text = (m.phrases ?? []).join(', ') || 'board is empty'
+    else if (m.type === 'board') {
+      const b: string = (m.phrases ?? []).join(', ') || 'board is empty'
+      if (r.quiet) {
+        r.quiet = false
+        r.last = b
+        setBig(b)
+        return
+      }
+      text = b
+    }
     else if (m.type === 'assist' || m.type === 'notice') text = m.text
     else if (m.type === 'marked') text = marked(m.count, m.removed)
     else if (m.type === 'final') setMeant(m.meant)
@@ -151,6 +171,7 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
   }
 
   const onStatus = (s: RelayStatus) => {
+    if (s === 'open') { clearTimeout(r.tryT); setTrying(false) }
     if (s === 'reconnecting') {
       r.dropped = true
       r.sent = false
@@ -176,6 +197,11 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
     r.joined = null
     r.sent = false
     r.waited = false
+    r.quiet = false
+    setTrying(false)
+    announce('Connecting.')
+    clearTimeout(r.tryT)
+    r.tryT = setTimeout(() => { setTrying(true); announce('Still trying to reach the class.') }, TRYING_MS)
     r.relay = (deps.connect ?? createRelay)({
       url: relayUrl(location, { role: 'student', rooms: r.saved.map((c) => c.token).join(',') }),
       onMessage,
@@ -187,9 +213,9 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
   }
 
   const mark = () => {
+    if (!send(undo ? unmarkMsg() : bookmarkMsg())) return announce('Not connected.')
     clearTimeout(r.undoT)
-    if (undo) { send(unmarkMsg()); setUndo(false); return }
-    send(bookmarkMsg())
+    if (undo) { setUndo(false); return }
     setUndo(true)
     r.undoT = setTimeout(() => setUndo(false), UNDO_MARK_MS)
   }
@@ -206,6 +232,8 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
     r.release?.()
     r.release = null
     clearTimeout(r.undoT)
+    clearTimeout(r.tryT)
+    setTrying(false)
     r.voice?.cancel()
     r.phase = 'idle'
     r.joined = null
@@ -220,6 +248,9 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
 
   // Visual only: the chip and banner repeat what the live region already says, so they stay hidden from screen readers.
   const here = r.joined ? nameOf(r.joined) : name
+  const ready = r.phase === 'joined' && !r.dropped
+  // Drives the visual placeholder and the look of each state; announcements stay in the live region.
+  const stage = r.dropped ? 'dropped' : r.phase === 'idle' ? (trying ? 'trying' : 'connecting') : r.phase
   return (
     <main className={running ? 'phone live' : 'phone'}>
       <p className="sr" aria-live={mode === 'screenreader' ? 'assertive' : 'off'} aria-atomic="true">{said}</p>
@@ -242,19 +273,23 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
       ))}
       {running && (
         <>
-          <div className={`p-chip${r.dropped || !r.joined ? ' off' : ''}`} aria-hidden="true"><span className="p-dot" />{here}</div>
-          <div className="p-stage">
+          <div className={`p-chip${ready ? '' : ' off'}`} aria-hidden="true"><span className="p-dot" />{here}</div>
+          <div className="p-stage" data-phase={stage}>
             {r.dropped && <div className="p-banner" aria-hidden="true">Reconnecting</div>}
-            {choices?.map((c) => (
-              <button key={c.token} type="button" className="p-btn p-join" onClick={() => join(c.token)}>{`Join ${r.names[c.token] ?? c.name}`}</button>
+            {choices?.map((c, i) => (
+              <button key={c.token} type="button" className="p-btn p-join" style={{ '--i': i } as React.CSSProperties} onClick={() => join(c.token)}>{`Join ${r.names[c.token] ?? c.name}`}</button>
             ))}
-            <p key={big} className="p-big" aria-hidden="true">{big}</p>
+            <p key={big} className="p-big" aria-hidden="true">{words(big)}</p>
             {meant && <p className="p-meant">Meant: {meant}</p>}
           </div>
           <div className="p-controls">
-            <button type="button" className="p-btn p-repeat" onClick={() => announce(r.last || 'Nothing to repeat yet.')}>Repeat last</button>
-            <button type="button" className="p-btn" onClick={mark}>{undo ? 'Undo mark' : "Mark: I didn't get this"}</button>
-            <button type="button" className="p-btn" onClick={() => { send(askMsg()); announce('Looking.') }}>What's happening?</button>
+            {ready && (
+              <>
+                <button type="button" className="p-btn p-repeat" onClick={() => announce(r.last || 'Nothing to repeat yet.')}>Repeat last</button>
+                <button type="button" className={`p-btn p-mark${undo ? ' undo' : ''}`} onClick={mark}>{undo ? 'Undo mark' : "Mark: I didn't get this"}</button>
+                <button type="button" className="p-btn p-ask" onClick={() => { if (send(askMsg())) announce('Looking.'); else announce('Not connected.') }}>What's happening?</button>
+              </>
+            )}
             <button type="button" className={`p-btn p-stop${armed ? ' armed' : ''}`} onClick={stop}>{armed ? 'Press again to stop' : 'Stop listening'}</button>
           </div>
           <p className="p-rtt">{rtt === null ? '' : `relay ${rtt} ms`}</p>

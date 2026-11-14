@@ -91,11 +91,14 @@ body { margin: 0; background: var(--bg); color: var(--text); -webkit-font-smooth
 /* Nothing said yet: a quiet placeholder so the screen never looks dead (aria-hidden element, the live region speaks the real state). */
 .p-big:empty { font-size: clamp(28px, 8vw, 40px); color: var(--muted); animation: none; }
 .p-big:empty::before { display: none; }
+/* One rule per phase (data-phase on the stage), so no selector can outrank another. */
 .p-big:empty::after { content: 'Listening.'; }
-.p-chip.off ~ .p-stage .p-big:empty::after { content: 'Waiting for class to start.'; }
-.p-chip ~ .p-stage:has(.p-join) .p-big:empty::after { content: 'Choose a class.'; }
-.p-stage:has(.p-join) .p-big:empty { order: -1; }
-.p-chip.off ~ .p-stage:has(.p-banner) .p-big:empty::after, .p-stage:has(.p-banner) .p-big:empty::after { content: none; }
+[data-phase='connecting'] .p-big:empty::after { content: 'Connecting.'; }
+[data-phase='trying'] .p-big:empty::after { content: 'Still trying to reach the class.'; }
+[data-phase='wait'] .p-big:empty::after { content: 'Waiting for class to start.'; }
+[data-phase='choose'] .p-big:empty::after { content: 'Choose a class.'; }
+[data-phase='dropped'] .p-big:empty::after { content: none; }
+[data-phase='choose'] .p-big:empty { order: -1; }
 .p-meant { margin: 0; font-size: 17px; line-height: 1.5; color: var(--muted); max-width: 40ch; }
 
 .p-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
