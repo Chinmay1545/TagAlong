@@ -10,8 +10,8 @@ export function TranscriptPanel({ segs, open }: { segs: Segment[]; open: boolean
         <div className="tr-rows">
           <div className="tr-head"><span>Said</span><span>Meant</span></div>
           {segs.map((s, i) => (
-            <div className="tr-row" key={i}>
-              <span className="said">{s.text}</span>
+            <div className={`tr-row${s.bookmarked ? ' marked' : ''}`} key={i}>
+              <span className="said">{s.bookmarked && <span className="tr-mark mono">Marked: student did not get this</span>}{s.text}</span>
               <span className="meant">{substituteParts(s.text, s.resolutions).map((p, j) => p.hit ? <mark key={j}>{p.text}</mark> : p.text)}</span>
             </div>
           ))}
