@@ -25,7 +25,10 @@ body { margin: 0; background: var(--bg); color: var(--text); -webkit-font-smooth
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
-.phone { min-height: 100dvh; display: flex; flex-direction: column; padding: var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l); position: relative; }
+.phone { min-height: 100dvh; width: 100%; max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; padding: var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l); position: relative; }
+
+/* Flex children may shrink below their content; long words wrap instead of widening the page. */
+.phone > *, .p-stage > *, .p-choose > * { min-width: 0; }
 
 /* ---------- buttons ---------- */
 .p-btn {
@@ -50,14 +53,15 @@ body { margin: 0; background: var(--bg); color: var(--text); -webkit-font-smooth
 .p-class { order: -1; font-family: var(--mono); font-size: 13px; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
 .p-go { font-size: clamp(44px, 13vw, 88px); font-weight: 600; letter-spacing: -0.04em; line-height: 0.95; max-width: 8ch; text-wrap: balance; }
 /* A small accent dot with a slow breathing ring behind it, up in the empty top of the screen. */
-.p-orb { position: absolute; top: calc(var(--safe-t) + 18vh); left: calc(var(--safe-l) + 8px); width: 14px; height: 14px; border-radius: 50%; background: var(--accent); }
+/* Centre sits so the outer ring's left edge lines up with the text. */
+.p-orb { position: absolute; top: calc(var(--safe-t) + 20vh); left: calc(var(--safe-l) + 89px); width: 14px; height: 14px; border-radius: 50%; background: var(--accent); }
 .p-orb::before, .p-orb::after { content: ''; position: absolute; inset: -40px; border-radius: 50%; border: 1px solid var(--accent-edge); animation: breathe 3.2s ease-in-out infinite; }
 .p-orb::after { inset: -88px; border-color: var(--accent-soft); background: var(--accent-soft); animation-delay: -1.6s; }
 
 /* ---------- first visit: two stacked choices ---------- */
 .p-choose { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 14px; padding-bottom: 8vh; }
 .p-choose::before { content: 'How should whispers reach you?'; font-size: clamp(30px, 8.5vw, 48px); font-weight: 600; letter-spacing: -0.03em; line-height: 1.05; max-width: 12ch; margin-bottom: 18px; text-wrap: balance; }
-.p-choice { display: grid; animation: rise 0.6s var(--spring) both; }
+.p-choice { display: grid; grid-template-columns: minmax(0, 1fr); animation: rise 0.6s var(--spring) both; }
 .p-choice + .p-choice { animation-delay: 80ms; }
 .p-choice > * { grid-area: 1 / 1; }
 .p-choice .p-btn { min-height: 112px; padding: 22px 22px 48px; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
@@ -84,7 +88,14 @@ body { margin: 0; background: var(--bg); color: var(--text); -webkit-font-smooth
   text-wrap: balance; overflow-wrap: anywhere; animation: rise 0.7s var(--spring) both;
 }
 .p-big::before { content: ''; display: block; width: 56px; height: 3px; margin-bottom: 22px; border-radius: 2px; background: var(--accent); transform-origin: left; animation: speak 2s var(--spring) both; }
-.p-big:empty { display: none; }
+/* Nothing said yet: a quiet placeholder so the screen never looks dead (aria-hidden element, the live region speaks the real state). */
+.p-big:empty { font-size: clamp(28px, 8vw, 40px); color: var(--muted); animation: none; }
+.p-big:empty::before { display: none; }
+.p-big:empty::after { content: 'Listening.'; }
+.p-chip.off ~ .p-stage .p-big:empty::after { content: 'Waiting for class to start.'; }
+.p-chip ~ .p-stage:has(.p-join) .p-big:empty::after { content: 'Choose a class.'; }
+.p-stage:has(.p-join) .p-big:empty { order: -1; }
+.p-chip.off ~ .p-stage:has(.p-banner) .p-big:empty::after, .p-stage:has(.p-banner) .p-big:empty::after { content: none; }
 .p-meant { margin: 0; font-size: 17px; line-height: 1.5; color: var(--muted); max-width: 40ch; }
 
 .p-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }

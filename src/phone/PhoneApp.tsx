@@ -242,7 +242,7 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
       ))}
       {running && (
         <>
-          <div className={`p-chip${r.dropped ? ' off' : ''}`} aria-hidden="true"><span className="p-dot" />{here}</div>
+          <div className={`p-chip${r.dropped || !r.joined ? ' off' : ''}`} aria-hidden="true"><span className="p-dot" />{here}</div>
           <div className="p-stage">
             {r.dropped && <div className="p-banner" aria-hidden="true">Reconnecting</div>}
             {choices?.map((c) => (
