@@ -31,7 +31,9 @@ async function start() {
   })
   const tts = (text: string, headers: Record<string, string>) =>
     fetch(`${base}/api/tts`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify({ text }) })
-  return { base, ws, tts, synthCalls }
+  const status = (body: unknown, headers: Record<string, string> = {}) =>
+    fetch(`${base}/api/room-status`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body) })
+  return { base, ws, tts, status, synthCalls }
 }
 const settle = () => new Promise(r => setTimeout(r, 40))
 
@@ -91,5 +93,41 @@ describe('classroom relay in the app', () => {
   it('the camera device keeps using the voice with its key, for any text', async () => {
     const { tts } = await start()
     expect((await tts('anything at all', { cookie })).status).toBe(200)
+  })
+
+  it('room-status lists only verified live rooms, with no access key and no headers', async () => {
+    const { ws, status } = await start()
+    const bio = roomToken(KEY, 'bio110')
+    await ws('/ws/room?role=camera&room=math201', { cookie })
+    const r = await status({ rooms: [{ room: 'math201', token: tok }, { room: 'bio110', token: bio }, { room: 'chem1', token: 'wrong' }, { room: 'Bad Room', token: 'x' }, { room: 5 }, null] })
+    expect(r.status).toBe(200)
+    expect(await r.json()).toEqual({ live: ['math201'] })
+  })
+
+  it('room-status leaves out a room whose token belongs to another room, and a closed class', async () => {
+    const { ws, status } = await start()
+    const cam = await ws('/ws/room?role=camera&room=math201', { cookie })
+    expect(await (await status({ rooms: [{ room: 'math201', token: roomToken(KEY, 'bio110') }] })).json()).toEqual({ live: [] })
+    cam.send(JSON.stringify({ type: 'status', open: false }))
+    await settle()
+    expect(await (await status({ rooms: [{ room: 'math201', token: tok }] })).json()).toEqual({ live: [] })
+  })
+
+  it('room-status refuses more than ten rooms and malformed bodies', async () => {
+    const { status } = await start()
+    const many = Array.from({ length: 11 }, (_, i) => ({ room: `r${i}`, token: 'x' }))
+    expect((await status({ rooms: many })).status).toBe(400)
+    expect((await status({ rooms: 'math201' })).status).toBe(400)
+    expect((await status({})).status).toBe(400)
+    expect((await status('{not json')).status).toBe(400)
+  })
+
+  it('a room token still cannot call any other route', async () => {
+    const { base } = await start()
+    const h = { 'x-room': 'math201', 'x-room-token': tok }
+    expect((await fetch(`${base}/api/notes`, { method: 'POST', headers: { ...h, 'content-type': 'application/json' }, body: '{}' })).status).toBe(401)
+    expect((await fetch(`${base}/api/read-board`, { method: 'POST', headers: { ...h, 'content-type': 'image/jpeg' }, body: new Uint8Array([1]) })).status).toBe(401)
+    expect((await fetch(`${base}/api/room-link?room=math201`, { headers: h })).status).toBe(401)
+    expect((await fetch(`${base}/api/room-status`, { headers: h })).status).not.toBe(200) // GET is not the route
   })
 })
