@@ -1,0 +1,487 @@
+import { isBoardQuery } from '../live/boardQuery'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { TipBuffer } from '../core/tipBuffer'
+import { resolvePointer } from '../core/resolver'
+import type { Box, Resolution, Term } from '../core/types'
+import { startCamera } from '../vision/camera'
+import { keepScreenAwake } from '../vision/wakeLock'
+import { startHandTracker } from '../vision/handTracker'
+import { isFixtureMode, loadFixture } from '../board/boardClient'
+import { startBoardLoop, type BoardLoop } from '../board/boardLoop'
+import { createLive } from '../live/live'
+import { createWhisperPlayer } from '../audio/whisper'
+import { connectTranscribe } from '../speech/transcribeClient'
+import { startMic } from '../speech/mic'
+import { startWebSpeech } from '../speech/webSpeech'
+import type { WordItem } from '../speech/words'
+import { LATENCY_LOG_MAX } from '../core/config'
+import { createTranscript, substitute, type Segment } from '../transcript/store'
+import { median, applyMark, finalTimes, type Row, type Tally } from './judgeHelpers'
+import { TranscriptPanel } from './TranscriptPanel'
+import { reportCard } from '../transcript/report'
+import { ReportCard } from './ReportCard'
+import { NotesPanel } from './NotesPanel'
+import { ModeSwitch, PointerLog, Readout, StatsStrip, type Last } from './Panels'
+import { Readiness } from './Readiness'
+import { createBroadcaster, resolutionMsg, finalMsg, boardMsg, modeMsg, subscribe } from '../live/broadcast'
+import './judge.css'
+
+const ACCENT = '#3fb98a'
+const LINE = '#52525b'
+const NEUTRAL = '#71717a' // mid zinc: reads on a white board and a dark one
+const CHIP = 'rgba(9,9,11,0.78)'
+const SIGNAL_MS = 900 // ring pulse; the pointer line fades in the first 600 ms
+const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')
+const easeOut = (p: number) => 1 - (1 - p) ** 3
+type Signal = { at: number; terms: Term[]; tip: { x: number; y: number } | null; muted: boolean }
+const LOG_MAX = 50
+
+// Mirroring is opt-in via ?mirror=1. When on, the <video> preview is flipped with CSS scaleX(-1)
+// (the .mirror class), so the overlay must be drawn in that same displayed space. When off,
+// flipX is the identity. Data stays unmirrored either way; ONLY drawing goes through this flip.
+const mirror = new URLSearchParams(location.search).get('mirror') === '1'
+const flipX = (x: number, w = 0): number => (mirror ? 1 - (x + w) : x)
+
+function drawBox(ctx: CanvasRenderingContext2D, b: Box, W: number, H: number) {
+  ctx.strokeRect(flipX(b.x, b.w) * W, b.y * H, b.w * W, b.h * H)
+}
+
+// Small dark chip with mono text above a box, so labels read on a white board and a dark one.
+function drawLabel(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, on: string | null, small: boolean) {
+  const w = ctx.measureText(text).width + 10
+  const h = small ? 14 : 17
+  const top = Math.max(0, y - h - 3)
+  ctx.fillStyle = on ?? CHIP
+  ctx.beginPath()
+  ctx.roundRect(x, top, w, h, 3)
+  ctx.fill()
+  ctx.fillStyle = on === ACCENT ? '#09090b' : on ? '#fafafa' : '#e4e4e7'
+  ctx.fillText(text, x + 5, top + h - 4)
+}
+
+// The resolution moment: a fading line from fingertip to term, an expanding ring on the term,
+// or a neutral x ripple at the fingertip when nothing was in reach. Time-based, drawn per frame.
+function drawSignal(ctx: CanvasRenderingContext2D, s: Signal, tip: { x: number; y: number } | null, now: number, W: number, H: number) {
+  const age = now - s.at
+  if (age < 0 || age > SIGNAL_MS) return
+  const p = age / SIGNAL_MS
+  const color = s.muted ? NEUTRAL : ACCENT
+  const from = tip ?? s.tip
+  ctx.lineCap = 'round'
+  if (!s.terms.length) {
+    if (!from) return
+    const x = flipX(from.x) * W, y = from.y * H, r = 8 + 26 * easeOut(p), a = 1 - p
+    ctx.globalAlpha = a
+    ctx.strokeStyle = NEUTRAL
+    ctx.lineWidth = 1.5
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke()
+    ctx.lineWidth = 2
+    ctx.beginPath(); ctx.moveTo(x - 6, y - 6); ctx.lineTo(x + 6, y + 6); ctx.moveTo(x + 6, y - 6); ctx.lineTo(x - 6, y + 6); ctx.stroke()
+    ctx.globalAlpha = 1
+    return
+  }
+  for (const t of s.terms) {
+    const bx = flipX(t.box.x, t.box.w) * W, by = t.box.y * H, bw = t.box.w * W, bh = t.box.h * H
+    if (from && age < 600) {
+      const cx = bx + bw / 2, cy = by + bh / 2
+      const a = 1 - easeOut(age / 600)
+      const head = Math.min(1, age / 140) // line draws toward the term, then fades
+      const fx = flipX(from.x) * W, fy = from.y * H
+      ctx.globalAlpha = a
+      ctx.strokeStyle = color
+      ctx.lineWidth = 2
+      ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(fx + (cx - fx) * head, fy + (cy - fy) * head); ctx.stroke()
+    }
+    const pad = 3 + 22 * easeOut(p)
+    ctx.globalAlpha = (1 - p) * 0.9
+    ctx.strokeStyle = color
+    ctx.lineWidth = 2
+    ctx.beginPath(); ctx.roundRect(bx - pad, by - pad, bw + pad * 2, bh + pad * 2, 4 + pad / 2); ctx.stroke()
+  }
+  ctx.globalAlpha = 1
+}
+
+type Speech = 'off' | 'starting' | 'transcribe' | 'web speech' | 'unavailable'
+const TRANSCRIBE_CONNECT_MS = 3000
+const demo = new URLSearchParams(location.search).get('demo') === '1'
+
+declare global {
+  interface Window {
+    __tt?: {
+      say(text: string): void
+      report(): ReturnType<typeof reportCard>
+      state(): { log: string[]; transcript: { said: string; meant: string }[]; withoutApp: boolean; marks: { correct: number; total: number } }
+    }
+  }
+}
+
+export function JudgeScreen() {
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const tipsRef = useRef(new TipBuffer())
+  const termsRef = useRef<Term[]>([])
+  const resolvedRef = useRef<Term[]>([])
+  const boardLoopRef = useRef<BoardLoop | null>(null)
+  const signalRef = useRef<Signal | null>(null)
+  const boardAtRef = useRef<number | null>(null)
+  const fixture = demo || isFixtureMode(location.search)
+  const playerRef = useRef<ReturnType<typeof createWhisperPlayer>>(null as never)
+  const liveRef = useRef<ReturnType<typeof createLive>>(null as never)
+  if (!liveRef.current) {
+    playerRef.current = createWhisperPlayer()
+    liveRef.current = createLive({ getTerms: () => termsRef.current, tips: tipsRef.current, player: playerRef.current })
+  }
+  const latenciesRef = useRef<number[]>([])
+  const segRef = useRef(0)
+  const stopSpeechRef = useRef<(() => void) | null>(null)
+  const transcriptRef = useRef(createTranscript())
+  const rowIdRef = useRef(0)
+  const rowsRef = useRef<Row[]>([])
+  const whisperRef = useRef(true)
+  const tallyRef = useRef<Tally>({ correct: 0, total: 0 })
+  const [marks, setMarks] = useState<Tally>({ correct: 0, total: 0 })
+
+  const [rows, setRows] = useState<Row[]>([])
+  const [segs, setSegs] = useState<Segment[]>([])
+  const [fps, setFps] = useState(0)
+  const [boardAgo, setBoardAgo] = useState<string>('none')
+  const [termCount, setTermCount] = useState(0)
+  const [camError, setCamError] = useState<string | null>(null)
+  const [speech, setSpeech] = useState<Speech>('off')
+  const [whisperOn, setWhisperOn] = useState(true)
+  const [medianMs, setMedianMs] = useState<number | null>(null)
+  const [last, setLast] = useState<Last | null>(null)
+  const bcRef = useRef<ReturnType<typeof createBroadcaster>>(null as never)
+  if (!bcRef.current) bcRef.current = createBroadcaster()
+  useEffect(() => () => bcRef.current.close(), [])
+  const boardRef = useRef<Resolution | null>(null)
+  useEffect(() => subscribe(m => {
+    if (m.type !== 'hello') return
+    bcRef.current.send(modeMsg(!whisperRef.current))
+    if (boardRef.current) bcRef.current.send(boardMsg(boardRef.current))
+  }), [])
+
+
+  const prepare = (terms: Term[]) => { void playerRef.current.prepare(terms) }
+
+  // Reset button: drop every box and the highlight; live mode re-reads the board on the next tick.
+  const resetBoard = () => {
+    resolvedRef.current = []
+    if (boardLoopRef.current) boardLoopRef.current.reset()
+    else setTerms([])
+  }
+
+  const setTerms = (terms: Term[]) => {
+    termsRef.current = terms
+    boardAtRef.current = performance.now()
+    setTermCount(terms.length)
+    prepare(terms)
+  }
+
+  // Startup: camera -> hand tracker -> board loop (or fixture). Cancel-safe.
+  useEffect(() => {
+    let cancelled = false
+    let stopTracker: (() => void) | null = null
+    const video = videoRef.current!
+
+    ;(async () => {
+      if (fixture) {
+        try {
+          const terms = await loadFixture()
+          if (cancelled) return
+          termsRef.current = terms
+          setTermCount(terms.length)
+          prepare(terms)
+        } catch (e) {
+          if (!cancelled) setCamError((e as Error).message)
+        }
+      }
+      try {
+        await startCamera(video)
+        if (cancelled) {
+          // cleanup ran before srcObject was assigned, so it stopped nothing
+          ;(video.srcObject as MediaStream | null)?.getTracks().forEach(t => t.stop())
+          video.srcObject = null
+          return
+        }
+        const stop = await startHandTracker(video, s => tipsRef.current.push(s))
+        if (cancelled) { stop(); return }
+        stopTracker = stop
+        if (!fixture) boardLoopRef.current = startBoardLoop(video, tipsRef.current, setTerms)
+      } catch (e) {
+        if (!cancelled) setCamError((e as Error).message)
+      }
+    })()
+
+    const stats = setInterval(() => {
+      const now = performance.now()
+      setFps(tipsRef.current.window(now - 1000, now).length)
+      const at = boardAtRef.current
+      setBoardAgo(fixture ? 'fixture' : at === null ? 'none' : `${((now - at) / 1000).toFixed(0)}s ago`)
+    }, 500)
+    const stopWake = keepScreenAwake()
+
+    return () => {
+      cancelled = true
+      clearInterval(stats)
+      stopWake()
+      stopTracker?.()
+      boardLoopRef.current?.stop()
+      boardLoopRef.current = null
+      const stream = video.srcObject as MediaStream | null
+      stream?.getTracks().forEach(t => t.stop())
+      video.srcObject = null
+    }
+  }, [fixture])
+
+  // Overlay: rAF loop reading refs, no React state per frame.
+  useEffect(() => {
+    const canvas = canvasRef.current!
+    const ctx = canvas.getContext('2d')!
+    let raf = 0
+    const draw = () => {
+      const W = canvas.clientWidth
+      const H = canvas.clientHeight
+      const dpr = window.devicePixelRatio || 1
+      if (canvas.width !== Math.round(W * dpr) || canvas.height !== Math.round(H * dpr)) {
+        canvas.width = Math.round(W * dpr)
+        canvas.height = Math.round(H * dpr)
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      ctx.clearRect(0, 0, W, H)
+      const small = W < 640 // phone-sized view: smaller labels so neighbouring terms don't overlap
+      ctx.font = `${small ? 9 : 11}px "Geist Mono", monospace`
+      ctx.textBaseline = 'alphabetic'
+      const now = performance.now()
+      const hit = resolvedRef.current
+      const hue = signalRef.current?.muted ? NEUTRAL : ACCENT // without app: show the match, not as a whisper
+      for (const t of termsRef.current) {
+        const on = hit.includes(t)
+        const x = flipX(t.box.x, t.box.w) * W, y = t.box.y * H
+        if (on) {
+          ctx.globalAlpha = 0.12
+          ctx.fillStyle = hue
+          ctx.fillRect(x, y, t.box.w * W, t.box.h * H)
+          ctx.globalAlpha = 1
+        }
+        ctx.lineWidth = on ? 2 : 1
+        ctx.strokeStyle = on ? hue : LINE
+        drawBox(ctx, t.box, W, H)
+        drawLabel(ctx, t.phrase, x, y - 4, on ? hue : null, small)
+      }
+      const all = tipsRef.current.all()
+      const last = all[all.length - 1]
+      const tip = last && now - last.t < 500 ? last : null
+      if (signalRef.current && !reduceMotion?.matches) drawSignal(ctx, signalRef.current, tip, now, W, H)
+      if (tip) {
+        ctx.fillStyle = '#fafafa'
+        ctx.strokeStyle = '#09090b'
+        ctx.lineWidth = 2
+        ctx.beginPath()
+        ctx.arc(flipX(tip.x) * W, tip.y * H, 6, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.stroke()
+      }
+      raf = requestAnimationFrame(draw)
+    }
+    raf = requestAnimationFrame(draw)
+    return () => cancelAnimationFrame(raf)
+  }, [])
+
+  // Resolutions (from P, __tt or live speech) -> overlay highlight, log line, latency median.
+  useEffect(() => liveRef.current.onResolution((r, ms) => {
+    transcriptRef.current.addResolution(r)
+    bcRef.current.send(resolutionMsg(r, ms, !whisperRef.current))
+    resolvedRef.current = r.terms
+    const tips = tipsRef.current.all()
+    const tip = tips[tips.length - 1]
+    const now = performance.now()
+    signalRef.current = { at: now, terms: r.terms, tip: tip && now - tip.t < 500 ? { x: tip.x, y: tip.y } : null, muted: ms === null }
+    const phrase = r.terms.map(t => t.phrase).join(', ')
+    const line = !r.terms.length ? `${r.word.word} → silent`
+      : ms === null ? `${r.word.word} → ${phrase} · muted`
+      : `${r.word.word} → ${phrase} · ${(ms / 1000).toFixed(2)} s`
+    if (ms !== null) {
+      latenciesRef.current = [ms, ...latenciesRef.current].slice(0, LATENCY_LOG_MAX)
+      setMedianMs(median(latenciesRef.current))
+    }
+    const id = ++rowIdRef.current
+    setLast({ id, word: r.word.word, phrase, ms })
+    setRows(rs => (rowsRef.current = [{ id, line }, ...rs].slice(0, LOG_MAX)))
+  }), [])
+
+  useEffect(() => liveRef.current.onBoardQuery((r, ms) => {
+    boardRef.current = r
+    bcRef.current.send(boardMsg(r))
+    const line = !r.terms.length ? 'board → empty'
+      : `board → ${r.terms.length} terms · ${ms === null ? 'muted' : `${(ms / 1000).toFixed(2)} s`}`
+    setRows(rs => (rowsRef.current = [{ id: ++rowIdRef.current, line }, ...rs].slice(0, LOG_MAX)))
+  }), [])
+
+  // Every final source (Transcribe, Web Speech, __tt.say) goes through live.handleFinal.
+  useEffect(() => liveRef.current.onFinalSegment((text, t0, t1) => {
+    if (isBoardQuery(text)) return // a question to the app, not lecture content
+    transcriptRef.current.addFinal(text, t0, t1)
+    const all = transcriptRef.current.segments()
+    setSegs(all)
+    const seg = all[all.length - 1]
+    if (seg) bcRef.current.send(finalMsg(seg.text, substitute(seg.text, seg.resolutions)))
+  }), [])
+
+  const toggleWhisper = () => {
+    const on = !whisperRef.current
+    whisperRef.current = on
+    setWhisperOn(on)
+    bcRef.current.send(modeMsg(!on))
+    if (on) playerRef.current.unlock()
+    liveRef.current.setWhisperEnabled(on)
+  }
+  const toggleWhisperRef = useRef(toggleWhisper)
+  toggleWhisperRef.current = toggleWhisper
+
+  useEffect(() => {
+    const live = liveRef.current
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return
+      const tag = (e.target as HTMLElement | null)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      const k = e.key.toLowerCase()
+      if (k === 'w') { toggleWhisperRef.current(); return }
+      if (k === 'y' || k === 'n') {
+        const r = applyMark(rowsRef.current, tallyRef.current, k)
+        rowsRef.current = r.rows
+        tallyRef.current = r.tally
+        setRows(r.rows)
+        setMarks(r.tally)
+        return
+      }
+      if (k !== 'p') return
+      playerRef.current.unlock()
+      const t = performance.now()
+      live.handleItems([{ content: 'this', isPartial: false, arrivedAt: t, segment: -(++segRef.current) }], null)
+      live.handleFinal('this', t, t)
+    }
+    window.addEventListener('keydown', onKey)
+    if (import.meta.env.DEV) {
+      window.__tt = {
+        say(text: string) {
+          const t = performance.now()
+          const segment = -(++segRef.current) // negative: never collides with Web Speech segments (>=0)
+          const items: WordItem[] = text.split(/\s+/).filter(Boolean).map(content => ({ content, isPartial: false, arrivedAt: t, segment }))
+          live.handleItems(items, null)
+          live.handleFinal(text, t, t)
+        },
+        report: () => reportCard({ segments: transcriptRef.current.segments(), latencies: latenciesRef.current, marks: tallyRef.current }),
+        state: () => ({
+          log: rowsRef.current.map(r => r.line),
+          transcript: transcriptRef.current.segments().map(s => ({ said: s.text, meant: substitute(s.text, s.resolutions) })),
+          withoutApp: !whisperRef.current,
+          marks: tallyRef.current,
+        }),
+      }
+    }
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      if (import.meta.env.DEV) delete window.__tt
+    }
+  }, [])
+
+  const stopSpeech = () => { stopSpeechRef.current?.(); stopSpeechRef.current = null }
+  useEffect(() => stopSpeech, [])
+
+  const toggleListen = () => {
+    if (speech !== 'off' && speech !== 'unavailable') { stopSpeech(); setSpeech('off'); return }
+    stopSpeech()
+    const live = liveRef.current
+    let dead = false
+    let ws: ReturnType<typeof connectTranscribe> | null = null
+    let mic: { stop(): void } | null = null
+    let web: { stop(): void } | null = null
+    let audioStart: number | null = null
+    const onFinal = (source: 'web' | 'transcribe') => (text: string, t0 = 0, t1 = 0) => live.handleFinal(text, ...finalTimes(source, t0, t1, audioStart, performance.now()))
+    const cleanup = () => { dead = true; mic?.stop(); ws?.close(); web?.stop(); mic = ws = web = null }
+    stopSpeechRef.current = cleanup
+    setSpeech('starting')
+    playerRef.current.unlock()
+    live.resetUtterance() // new stream: Transcribe times restart at 0
+
+    const fallback = () => {
+      if (dead || web) return
+      mic?.stop(); ws?.close(); mic = ws = null
+      web = startWebSpeech(items => live.handleItems(items, null), t => onFinal('web')(t), () => { cleanup(); stopSpeechRef.current = null; setSpeech('unavailable') })
+      setSpeech(web ? 'web speech' : 'unavailable')
+      if (!web) stopSpeechRef.current = null
+    }
+
+    ;(async () => {
+      try {
+        const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+        ws = connectTranscribe(`${proto}://${location.host}/ws/transcribe`, items => live.handleItems(items, audioStart), onFinal('transcribe'), fallback)
+        const sock = ws
+        await Promise.race([sock.ready, new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), TRANSCRIBE_CONNECT_MS))])
+        if (dead || web) return
+        const m = await startMic(pcm => sock.send(pcm))
+        if (dead || web) { m.stop(); return }
+        mic = m
+        audioStart = m.audioStartPerf
+        setSpeech('transcribe')
+      } catch {
+        fallback()
+      }
+    })()
+  }
+
+  const report = reportCard({ segments: segs, latencies: latenciesRef.current, marks })
+  const listening = speech === 'transcribe' || speech === 'web speech'
+  const speechLabel = speech === 'starting' ? '...' : speech
+  const step = (i: number) => ({ '--i': i }) as CSSProperties
+
+  return (
+    <main className="judge">
+      <div className="grain" aria-hidden="true" />
+      <header className="masthead rise" style={step(0)}>
+        <div className="wordmark"><span className="dot" aria-hidden="true" />THIS &amp; THAT</div>
+        <div className="status mono">board · {boardAgo}<span className="status-gap" />speech · {speechLabel}<span className="status-gap" /><a className="student-link" href="/?student=1" target="student" onClick={e => { e.preventDefault(); window.open('/?student=1', 'student', 'popup,width=1280,height=800') }} title="Opens in its own window; keep this window visible so hand tracking keeps running">Open student view</a></div>
+      </header>
+      <Readiness />
+      <section className="stage-wrap">
+        <div className="viewfinder rise" style={step(1)}>
+          <div className="stage">
+            <video ref={videoRef} className={mirror ? 'mirror' : undefined} playsInline muted />
+            <canvas ref={canvasRef} />
+          </div>
+          <span className="vf-tag vf-src"><span className="dot" aria-hidden="true" />{fixture ? 'FIXTURE' : 'LIVE'}</span>
+          <span className="vf-tag vf-fps">{fps} FPS</span>
+        </div>
+        <div className="kbd-strip rise" style={step(2)}>
+          <span><kbd>P</kbd> point</span>
+          <span><kbd>Y</kbd> correct</span>
+          <span><kbd>N</kbd> wrong</span>
+          <span><kbd>W</kbd> with / without app</span>
+        </div>
+        {camError && <div className="cam-error" role="alert">{camError}</div>}
+      </section>
+      <aside className="side">
+        <div className="rise" style={step(1)}>
+          <ModeSwitch withApp={whisperOn} onToggle={() => { playerRef.current.unlock(); toggleWhisper() }} />
+        </div>
+        <div className="rise" style={step(2)}><Readout last={last} /></div>
+        <div className="rise" style={step(3)}>
+          <StatsStrip fps={fps} boardAgo={boardAgo} terms={termCount} speech={speech === 'web speech' ? 'web' : speechLabel} listening={listening} marks={marks} medianMs={medianMs} />
+        </div>
+        <div className="controls rise" style={step(4)}>
+          <button type="button" className={`listen${listening ? ' on' : ''}`} aria-pressed={listening} onClick={toggleListen}>
+            <span className="listen-ring" aria-hidden="true" />
+            {speech === 'off' || speech === 'unavailable' ? 'Listen' : 'Stop listening'}
+          </button>
+          <button type="button" className="reset" onClick={resetBoard} title="Clear every box and read the board again from scratch">Reset board</button>
+          {speech === 'unavailable' && <span className="inline-error" role="alert">speech: unavailable</span>}
+        </div>
+        <div className="rise" style={step(5)}><PointerLog rows={rows} /></div>
+        <div className="rise" style={step(6)}><TranscriptPanel segs={segs} open={demo} /></div>
+        <div className="rise" style={step(7)}><NotesPanel segs={segs} report={report} /></div>
+        <div className="rise" style={step(8)}><ReportCard card={report} /></div>
+      </aside>
+    </main>
+  )
+}

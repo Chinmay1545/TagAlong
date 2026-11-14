@@ -1,0 +1,38 @@
+:root {
+  --bg: #09090b;
+  --panel: #111113;
+  --line: #27272a;
+  --text: #f4f4f5;
+  --muted: #a1a1aa;
+  --dim: #8e8e96;
+  --accent: #3fb98a;
+  --spring: cubic-bezier(0.16, 1, 0.3, 1);
+  --mono: 'Geist Mono', ui-monospace, monospace;
+  font-family: 'Geist', system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; }
+.mono { font-family: var(--mono); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.student { min-height: 100dvh; display: grid; grid-template-rows: auto 1fr auto auto; gap: 24px; padding: 20px 24px 28px; max-width: 1600px; margin: 0 auto; }
+.s-head { display: flex; justify-content: space-between; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--line); font-size: 13px; letter-spacing: 0.14em; color: var(--muted); text-transform: uppercase; }
+.dot { display: inline-block; width: 8px; height: 8px; margin-right: 12px; border-radius: 50%; background: var(--accent); animation: pulse 2.4s ease-in-out infinite; }
+.s-stage { display: flex; flex-direction: column; justify-content: center; min-width: 0; padding: 0 0 0 clamp(0px, 6vw, 96px); }
+.s-empty { margin: 0; font-size: clamp(24px, 3.4vw, 44px); color: var(--dim); letter-spacing: -0.02em; }
+.s-now { animation: rise 0.28s var(--spring) both; }
+.s-word { font-size: clamp(16px, 2vw, 28px); color: var(--muted); margin-bottom: 12px; }
+.s-phrase { margin: 0; font-size: clamp(48px, 9vw, 120px); font-weight: 600; line-height: 1; letter-spacing: -0.04em; color: var(--text); overflow-wrap: anywhere; }
+.s-phrase.s-quiet, .s-phrase.s-muted { font-size: clamp(32px, 5vw, 64px); color: var(--dim); font-weight: 500; }
+.struck { text-decoration: line-through; text-decoration-thickness: 3px; text-decoration-color: var(--accent); }
+.s-hist { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.s-hist li { display: flex; gap: 16px; align-items: baseline; font-size: clamp(18px, 2vw, 28px); animation: rise 0.28s var(--spring) both; }
+.s-hist .mono { font-size: 14px; color: var(--dim); min-width: 5ch; }
+.s-meant { border-top: 1px solid var(--line); padding-top: 16px; }
+.s-meant h2 { margin: 0 0 8px; font-size: 12px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); }
+.s-meant p { margin: 0; font-size: clamp(18px, 2vw, 28px); line-height: 1.4; color: var(--muted); max-width: 70ch; }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(0.7); opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
