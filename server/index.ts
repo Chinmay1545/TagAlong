@@ -5,7 +5,8 @@ import { join } from 'node:path'
 import { readBoardHandler, streamModelFromEnv, type StreamModel } from './readBoard'
 import { bedrockCallModelFromEnv, bedrockCallTextFromEnv, bedrockDescribeFromEnv } from './bedrock'
 import { shareRouter, shareFromEnv, type Share } from './share'
-import { ttsRouter, pollySynth, type Synth } from './tts'
+import { ttsRouter, type Synth } from './tts'
+import { synthFromEnv, voiceFromEnv } from './voice'
 import { attachTranscribe } from './transcribe'
 import { attachRooms, roomSecret, roomsRouter } from './roomsServer'
 import { anthropicCallModelFromEnv, anthropicCallTextFromEnv, anthropicDescribeFromEnv, pickProvider } from './anthropic'
@@ -70,8 +71,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const secret = roomSecret(process.env)
   const provider = pickProvider(process.env)
   const callModel = provider === 'anthropic' ? anthropicCallModelFromEnv(process.env) : bedrockCallModelFromEnv(process.env)
-  const server = createApp(callModel, pollySynth(), provider === 'anthropic' ? anthropicCallTextFromEnv(process.env) : process.env.AWS_REGION ? bedrockCallTextFromEnv(process.env) : undefined, { staticDir: existsSync('dist/index.html') ? join(process.cwd(), 'dist') : undefined, share: shareFromEnv(process.env), streamModel: streamModelFromEnv(process.env), describe: provider === 'anthropic' ? anthropicDescribeFromEnv(process.env) : process.env.AWS_REGION ? bedrockDescribeFromEnv(process.env) : undefined, access, roomSecret: secret }).listen(port, host, () => {
-    console.log(`listening on ${host}:${port} (board reader: ${provider}; BOARD_MODEL_ID set: ${process.env.BOARD_MODEL_ID ? 'yes' : 'no'}; hosts: ${[...access.hosts].join(', ')}; access key: ${access.key ? 'required' : 'off'})`)
+  const server = createApp(callModel, synthFromEnv(process.env), provider === 'anthropic' ? anthropicCallTextFromEnv(process.env) : process.env.AWS_REGION ? bedrockCallTextFromEnv(process.env) : undefined, { staticDir: existsSync('dist/index.html') ? join(process.cwd(), 'dist') : undefined, share: shareFromEnv(process.env), streamModel: streamModelFromEnv(process.env), access, describe: provider === 'anthropic' ? anthropicDescribeFromEnv(process.env) : process.env.AWS_REGION ? bedrockDescribeFromEnv(process.env) : undefined, roomSecret: secret }).listen(port, host, () => {
+    console.log(`listening on ${host}:${port} (board reader: ${provider}; BOARD_MODEL_ID set: ${process.env.BOARD_MODEL_ID ? 'yes' : 'no'}; hosts: ${[...access.hosts].join(', ')}; access key: ${access.key ? 'required' : 'off'}; voice: ${voiceFromEnv(process.env)})`)
   })
   attachTranscribe(server, undefined, access)
   attachRooms(server, { secret, access })
