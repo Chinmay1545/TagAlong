@@ -7,6 +7,7 @@ import { loadClasses, saveClass, type SavedClass } from './classes'
 import { pickRoom, waitingText } from './pick'
 import { createVoice, type VoiceMode } from './voice'
 import { createEarcons } from './earcons'
+import './phone.css'
 
 const VOICE_KEY = 'tagalong:voice'
 const TIP_KEY = 'tagalong:tip'
@@ -217,28 +218,45 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
     announce('Stopped.')
   }
 
+  // Visual only: the chip and banner repeat what the live region already says, so they stay hidden from screen readers.
+  const here = r.joined ? nameOf(r.joined) : name
   return (
-    <main className="phone">
+    <main className={running ? 'phone live' : 'phone'}>
       <p className="sr" aria-live={mode === 'screenreader' ? 'assertive' : 'off'} aria-atomic="true">{said}</p>
       {!running && (mode ? (
-        <button type="button" className="p-btn p-start" onClick={() => start(mode)}>{`Start listening to ${name}`}</button>
+        <button type="button" className="p-btn p-start" onClick={() => start(mode)}>
+          <span className="p-orb" aria-hidden="true" />
+          <span className="p-go">Start listening</span>{' '}<span className="sr">to</span>{' '}<span className="p-class">{name}</span>
+        </button>
       ) : (
-        <>
-          <button type="button" className="p-btn" onClick={() => start('screenreader')}>I use VoiceOver or TalkBack</button>
-          <button type="button" className="p-btn" onClick={() => start('speak')}>Read whispers aloud for me</button>
-        </>
+        <div className="p-choose">
+          <div className="p-choice">
+            <button type="button" className="p-btn" onClick={() => start('screenreader')}>I use VoiceOver or TalkBack</button>
+            <span className="p-desc" aria-hidden="true">Your screen reader speaks each whisper.</span>
+          </div>
+          <div className="p-choice">
+            <button type="button" className="p-btn" onClick={() => start('speak')}>Read whispers aloud for me</button>
+            <span className="p-desc" aria-hidden="true">This phone says each whisper out loud.</span>
+          </div>
+        </div>
       ))}
       {running && (
         <>
-          {choices?.map((c) => (
-            <button key={c.token} type="button" className="p-btn" onClick={() => join(c.token)}>{`Join ${r.names[c.token] ?? c.name}`}</button>
-          ))}
-          <p className="p-big" aria-hidden="true">{big}</p>
-          {meant && <p className="p-meant">Meant: {meant}</p>}
-          <button type="button" className="p-btn" onClick={() => announce(r.last || 'Nothing to repeat yet.')}>Repeat last</button>
-          <button type="button" className="p-btn" onClick={mark}>{undo ? 'Undo mark' : "Mark: I didn't get this"}</button>
-          <button type="button" className="p-btn" onClick={() => { send(askMsg()); announce('Looking.') }}>What's happening?</button>
-          <button type="button" className="p-btn" onClick={stop}>{armed ? 'Press again to stop' : 'Stop listening'}</button>
+          <div className={`p-chip${r.dropped ? ' off' : ''}`} aria-hidden="true"><span className="p-dot" />{here}</div>
+          <div className="p-stage">
+            {r.dropped && <div className="p-banner" aria-hidden="true">Reconnecting</div>}
+            {choices?.map((c) => (
+              <button key={c.token} type="button" className="p-btn p-join" onClick={() => join(c.token)}>{`Join ${r.names[c.token] ?? c.name}`}</button>
+            ))}
+            <p key={big} className="p-big" aria-hidden="true">{big}</p>
+            {meant && <p className="p-meant">Meant: {meant}</p>}
+          </div>
+          <div className="p-controls">
+            <button type="button" className="p-btn p-repeat" onClick={() => announce(r.last || 'Nothing to repeat yet.')}>Repeat last</button>
+            <button type="button" className="p-btn" onClick={mark}>{undo ? 'Undo mark' : "Mark: I didn't get this"}</button>
+            <button type="button" className="p-btn" onClick={() => { send(askMsg()); announce('Looking.') }}>What's happening?</button>
+            <button type="button" className={`p-btn p-stop${armed ? ' armed' : ''}`} onClick={stop}>{armed ? 'Press again to stop' : 'Stop listening'}</button>
+          </div>
           <p className="p-rtt">{rtt === null ? '' : `relay ${rtt} ms`}</p>
         </>
       )}

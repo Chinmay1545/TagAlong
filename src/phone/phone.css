@@ -1,0 +1,102 @@
+/* The student phone: one calm dark sheet, one emerald accent, type that reads from across a desk. */
+:root {
+  --bg: #09090b;
+  --panel: #111113;
+  --raise: #18181b;
+  --line: #27272a;
+  --line-2: #3f3f46;
+  --text: #f4f4f5;
+  --muted: #a1a1aa;
+  --dim: #8e8e96;
+  --accent: #3fb98a;
+  --accent-soft: rgba(63, 185, 138, 0.1);
+  --accent-edge: rgba(63, 185, 138, 0.45);
+  --spring: cubic-bezier(0.16, 1, 0.3, 1);
+  --mono: 'Geist Mono', ui-monospace, monospace;
+  --safe-t: max(20px, env(safe-area-inset-top));
+  --safe-r: max(20px, env(safe-area-inset-right));
+  --safe-b: max(20px, env(safe-area-inset-bottom));
+  --safe-l: max(20px, env(safe-area-inset-left));
+  font-family: 'Geist', system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+.phone { min-height: 100dvh; display: flex; flex-direction: column; padding: var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l); position: relative; }
+
+/* ---------- buttons ---------- */
+.p-btn {
+  min-height: 64px; width: 100%; padding: 14px 18px; font: inherit; font-size: 17px; font-weight: 500; line-height: 1.25; text-align: left;
+  color: var(--text); background: var(--raise); border: 1px solid var(--line-2); border-radius: 18px; cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: transform 0.3s var(--spring), border-color 0.3s var(--spring), background-color 0.3s var(--spring);
+  touch-action: manipulation;
+}
+.p-btn:hover { border-color: var(--accent-edge); }
+.p-btn:active { transform: scale(0.98); }
+
+/* ---------- start: the whole screen is the button ---------- */
+.p-start {
+  flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-start; gap: 14px;
+  margin: calc(-1 * var(--safe-t)) calc(-1 * var(--safe-r)) calc(-1 * var(--safe-b)) calc(-1 * var(--safe-l));
+  padding: var(--safe-t) var(--safe-r) calc(var(--safe-b) + 12vh) calc(var(--safe-l) + 8px);
+  border: 0; border-radius: 0; background: var(--bg); box-shadow: none; position: relative; overflow: hidden;
+}
+.p-start:hover { border-color: transparent; }
+.p-start:focus-visible { outline-offset: -6px; }
+.p-class { order: -1; font-family: var(--mono); font-size: 13px; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+.p-go { font-size: clamp(44px, 13vw, 88px); font-weight: 600; letter-spacing: -0.04em; line-height: 0.95; max-width: 8ch; text-wrap: balance; }
+/* A small accent dot with a slow breathing ring behind it, up in the empty top of the screen. */
+.p-orb { position: absolute; top: calc(var(--safe-t) + 18vh); left: calc(var(--safe-l) + 8px); width: 14px; height: 14px; border-radius: 50%; background: var(--accent); }
+.p-orb::before, .p-orb::after { content: ''; position: absolute; inset: -40px; border-radius: 50%; border: 1px solid var(--accent-edge); animation: breathe 3.2s ease-in-out infinite; }
+.p-orb::after { inset: -88px; border-color: var(--accent-soft); background: var(--accent-soft); animation-delay: -1.6s; }
+
+/* ---------- first visit: two stacked choices ---------- */
+.p-choose { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 14px; padding-bottom: 8vh; }
+.p-choose::before { content: 'How should whispers reach you?'; font-size: clamp(30px, 8.5vw, 48px); font-weight: 600; letter-spacing: -0.03em; line-height: 1.05; max-width: 12ch; margin-bottom: 18px; text-wrap: balance; }
+.p-choice { display: grid; animation: rise 0.6s var(--spring) both; }
+.p-choice + .p-choice { animation-delay: 80ms; }
+.p-choice > * { grid-area: 1 / 1; }
+.p-choice .p-btn { min-height: 112px; padding: 22px 22px 48px; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+.p-desc { align-self: end; padding: 0 22px 20px; font-size: 14px; color: var(--muted); pointer-events: none; }
+
+/* ---------- live ---------- */
+.p-chip {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 10px; max-width: calc(100% - 120px);
+  padding: 8px 14px 8px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel);
+  font-family: var(--mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.p-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--accent); animation: pulse 2.4s ease-in-out infinite; }
+.p-chip.off .p-dot { background: var(--dim); animation: none; }
+.p-rtt { position: absolute; top: calc(var(--safe-t) + 9px); right: var(--safe-r); margin: 0; font-family: var(--mono); font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+
+.p-stage { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 16px; padding: 28px 0 24px; min-height: 0; }
+.p-banner { padding: 12px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--muted); font-size: 15px; animation: rise 0.4s var(--spring) both; }
+.p-join { animation: rise 0.5s var(--spring) both; }
+
+/* The current whisper: huge, and a thin accent bar above it that flashes when it changes (the element is keyed, so both restart). */
+.p-big {
+  margin: 0; font-size: clamp(44px, 12vw, 96px); font-weight: 600; letter-spacing: -0.035em; line-height: 1.02;
+  text-wrap: balance; overflow-wrap: anywhere; animation: rise 0.7s var(--spring) both;
+}
+.p-big::before { content: ''; display: block; width: 56px; height: 3px; margin-bottom: 22px; border-radius: 2px; background: var(--accent); transform-origin: left; animation: speak 2s var(--spring) both; }
+.p-big:empty { display: none; }
+.p-meant { margin: 0; font-size: 17px; line-height: 1.5; color: var(--muted); max-width: 40ch; }
+
+.p-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.p-repeat { grid-column: 1 / -1; min-height: 72px; font-size: 19px; font-weight: 600; border-color: var(--accent-edge); background: var(--accent-soft); }
+.p-stop { grid-column: 1 / -1; min-height: 56px; font-size: 15px; color: var(--muted); background: transparent; border-color: var(--line); }
+.p-stop.armed { color: var(--text); border-color: var(--muted); }
+
+/* ---------- motion ---------- */
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(0.7); opacity: 0.45; } }
+@keyframes breathe { 0%, 100% { transform: scale(0.82); opacity: 0.35; } 50% { transform: scale(1); opacity: 1; } }
+@keyframes speak { 0% { transform: scaleX(0.2); opacity: 0.4; } 20% { transform: scaleX(1.6); opacity: 1; } 100% { transform: scaleX(1); opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
