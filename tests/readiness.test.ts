@@ -8,6 +8,6 @@ describe('missingLines', () => {
   it('lists each missing item in plain words', () => {
     const l = missingLines({ ok: false, board: 'missing', tts: false, notes: false, transcribe: 'missing' })
     expect(l).toHaveLength(4)
-    expect(l[1]).toBe('Voice: Polly not configured — using the browser voice.')
+    expect(l[1]).toBe('Voice: no voice service configured — using the browser voice.')
   })
 })

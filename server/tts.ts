@@ -9,7 +9,7 @@ const CACHE_MAX = 200
 
 export function ttsRouter(synth: Synth): express.Router {
   const router = express.Router()
-  const cache = new Map<string, Buffer>() // ponytail: FIFO-capped in-memory; swap for LRU if hit rate matters
+  const cache = new Map<string, { audio: Buffer; voice?: string }>() // ponytail: FIFO-capped in-memory; swap for LRU if hit rate matters
   router.post('/api/tts', express.json({ limit: '4kb' }), async (req, res) => {
     const raw = req.body?.text
     const text = typeof raw === 'string' ? raw.trim() : ''
@@ -18,13 +18,15 @@ export function ttsRouter(synth: Synth): express.Router {
       return
     }
     try {
-      let audio = cache.get(text)
-      if (!audio) {
-        audio = await synth(text)
-        cache.set(text, audio)
+      let hit = cache.get(text)
+      if (!hit) {
+        const audio = await synth(text)
+        hit = { audio, voice: (synth as Partial<{ last(): string }>).last?.() } // which voice really spoke, if the synth says
+        cache.set(text, hit)
         if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value!)
       }
-      res.type('audio/mpeg').send(audio)
+      if (hit.voice) res.setHeader('x-tts-voice', hit.voice) // visible in the browser's network tab
+      res.type('audio/mpeg').send(hit.audio)
     } catch (e) {
       console.error('tts failed:', e instanceof Error ? e.message : String(e)) // detail stays server-side
       res.status(502).json({ error: 'tts failed' })
