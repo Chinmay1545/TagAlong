@@ -3,7 +3,8 @@ import { HOLD_MAX_MS, LATE_WINDOW_MS, MAX_DIST, RECHECK_MS, SCOPE_SPAN_MS, SCOPE
 import type { TipBuffer } from '../core/tipBuffer'
 import type { Box, Resolution, Term, WordEvent } from '../core/types'
 import type { createWhisperPlayer } from '../audio/whisper'
-import { isBoardQuery, readingOrder } from './boardQuery'
+import { isBoardQuery } from './boardQuery'
+import { topLevel } from './overview'
 import { detectPointerWords, type WordItem } from '../speech/words'
 
 export type Live = {
@@ -51,26 +52,33 @@ export function createLive({ getTerms, tips, player, now = () => performance.now
   // behind it. `round` goes up on cancelWaiting, so a timer set before it does nothing when it fires.
   let waiting = false
   let round = 0
-  let queue: { word: WordEvent; when: When; wait: number }[] = []
+  let scoped: { word: WordEvent; go: () => void } | null = null // the word waiting for scope words, and how to stop its wait early
+  let queue: { word: WordEvent; when: When; until: number }[] = [] // until: when a scope wait must end (0: no wait)
   const drain = () => {
-    while (!waiting && queue.length) { const next = queue.shift()!; start(next.word, next.when, next.wait) }
+    while (!waiting && queue.length) { const next = queue.shift()!; start(next.word, next.when, next.until) }
   }
-  const start = (word: WordEvent, when: When, wait: number) => {
-    if (wait <= 0) { resolve(word, when, true); return }
+  const start = (word: WordEvent, when: When, until: number) => {
+    const wait = until - now() // measured now: a word that queued behind another keeps its cap from its own arrival
+    if (!until || wait <= 0 || scopeSettled(word)) { resolve(word, when, true); return }
     // Transcribe sends words one by one: the scope words after "this" arrive a moment later. Look at the
     // pointer around the word's own time (`when`), but read the words only after they had time to come.
     waiting = true
     const mine = round
-    later(() => {
-      if (mine !== round) return // cancelled
+    let done = false
+    const go = () => {
+      if (done || mine !== round) return // already released by a later item, or cancelled
+      done = true
+      scoped = null
       waiting = false
       resolve(word, when, true)
       drain()
-    }, wait)
+    }
+    scoped = { word, go }
+    later(go, wait)
   }
-  const take = (word: WordEvent, when: When, wait: number) => {
-    if (waiting) { queue.push({ word, when, wait }); return }
-    start(word, when, wait)
+  const take = (word: WordEvent, when: When, until: number) => {
+    if (waiting) { queue.push({ word, when, until }); return }
+    start(word, when, until)
   }
   // The latest items of the current utterance, so scope words can be found after a pointer word.
   let utter: WordItem[] = []
@@ -88,6 +96,14 @@ export function createLive({ getTerms, tips, player, now = () => performance.now
     return utter.slice(i + 1, i + 1 + (lateWords.has(word) ? 2 : 3))
       .filter(it => (me.segment === undefined || it.segment === undefined || it.segment === me.segment) && (lateWords.has(word) || itemT(it) - word.t <= SCOPE_SPAN_MS))
       .map(norm)
+  }
+  // The wait for scope words is over once the next item of the utterance has arrived, unless the items so far
+  // are only "whole" (more is coming: "this whole thing"). Items said too late to count end the wait too.
+  const scopeSettled = (word: WordEvent) => {
+    const i = indexOf(word)
+    if (i < 0 || i + 1 >= utter.length) return i < 0
+    const after = wordsAfter(word)
+    return !(after.length && after.every(w => w === 'whole'))
   }
   // One pointer word. when: the moment to look at. recheck: allowed to wait and look once more.
   const resolve = (word: WordEvent, when: When, recheck: boolean) => {
@@ -122,18 +138,20 @@ export function createLive({ getTerms, tips, player, now = () => performance.now
       // Callers send either the whole utterance again or only the new items: keep one growing list.
       audioStart = audioStartPerf
       utter = items.length >= utter.length && (!utter.length || norm(items[0]) === norm(utter[0])) ? items : [...utter, ...items]
+      if (scoped && scopeSettled(scoped.word)) scoped.go()
       for (const word of detectPointerWords(items, seen, audioStartPerf)) {
         // A late word (browser speech) was said some time before it arrived, and the finger may have left
         // since. Look around the moment it was probably said, and further back, instead of around now.
         const when: When = late ? { at: word.t - WEB_SPEECH_LAG_MS, windowMs: LATE_WINDOW_MS } : { at: word.t, windowMs: TIP_WINDOW_MS }
-        // Timed (Transcribe) word with nothing (or only "whole") after it yet: wait the rest of SCOPE_WAIT_MS since
-        // it was said for scope words. Browser speech has the whole phrase.
+        // Timed (Transcribe) word with nothing (or only "whole") after it yet: wait for the next item, at most
+        // SCOPE_WAIT_MS after this word ARRIVED (partials come 300-800 ms after the speech, so time since it was
+        // said would be used up already). Browser speech has the whole phrase.
         if (late) lateWords.add(word)
         const i = indexOf(word)
         const timed = !late && SINGLE.has(word.word) && i >= 0 && utter[i].startTime !== undefined && audioStartPerf !== null
         const after = timed ? wordsAfter(word) : []
         const open = after.every(w => w === 'whole') && (after.length === 0 ? i === utter.length - 1 : i + after.length === utter.length - 1)
-        take(word, when, timed && open ? SCOPE_WAIT_MS - (now() - word.t) : 0)
+        take(word, when, timed && open ? utter[i].arrivedAt + SCOPE_WAIT_MS : 0)
       }
     },
     cancelWaiting() { round++; waiting = false; queue = [] },
@@ -153,7 +171,7 @@ export function createLive({ getTerms, tips, player, now = () => performance.now
     handleFinal(text, t0, t1) {
       finalCbs.forEach(cb => cb(text, t0, t1))
       if (!isBoardQuery(text)) return
-      const terms = readingOrder(getTerms())
+      const terms = topLevel(getTerms()) // the short list, in reading order: not every term and group
       const r: Resolution = { word: { word: 'board', t: t1, isPointer: false }, terms }
       const played = terms.length ? player.play(r) : null // one call: whisper flush only applies to the first term
       boardCbs.forEach(cb => cb(r, played ? played.startedAt - t1 : null))

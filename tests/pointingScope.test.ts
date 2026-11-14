@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TipBuffer } from '../src/core/tipBuffer'
 import { createLive } from '../src/live/live'
 import { readPointer } from '../src/core/resolver'
@@ -86,6 +86,15 @@ describe('sweep for this', () => {
   })
 })
 
+describe('these / those over a board with groups', () => {
+  it('a sweep from the top 2x to the bottom 2x names the two terms, never a group', () => {
+    const tips = new TipBuffer()
+    inOrder(move('finger', { x: 0.25, y: 0.25 }, { x: 0.35, y: 0.65 }, 100, 700, 25)).forEach(p => tips.push(p))
+    const r = readPointer(word('these', 400), TERMS, tips).resolution
+    expect(r.terms.map(x => x.phrase)).toEqual(['2x, in the top', '2x, in the bottom'])
+  })
+})
+
 describe('waiting for scope words (Transcribe)', () => {
   function setup(points = rest('finger', 0.25, 0.25, 0, 3000)) {
     let clock = 1000
@@ -147,10 +156,10 @@ describe('waiting for scope words (Transcribe)', () => {
     b.fire()
     expect(b.got).toEqual([[4]])
   })
-  it('waits only the remainder of SCOPE_WAIT_MS', () => {
+  it('waits SCOPE_WAIT_MS from the word\'s arrival, however long ago it was said', () => {
     const s = setup()
     s.live.handleItems([s.item('this', 0.85)], 0) // said 150 ms before it arrived
-    expect(s.timers[0].ms).toBe(SCOPE_WAIT_MS - 150)
+    expect(s.timers[0].ms).toBe(SCOPE_WAIT_MS)
   })
   it('"this is my favorite" with no rest: silent', () => {
     const s = setup(move('finger', { x: 0.9, y: 0.9 }, { x: 0.95, y: 0.9 }, 0, 3000, 50))
@@ -158,5 +167,66 @@ describe('waiting for scope words (Transcribe)', () => {
     s.live.handleItems([s.item('this', 1.0), s.item('is', 1.2), s.item('my', 1.3), s.item('favorite', 1.5)], 0)
     s.fire()
     expect(s.got).toEqual([[]])
+  })
+})
+
+// Real Transcribe partials arrive 300-800 ms after the speech: the wait counts from the arrival, ends when
+// the next item arrives, and never lasts longer than SCOPE_WAIT_MS.
+describe('scope wait counted from arrival (fake timers)', () => {
+  function run() {
+    vi.useFakeTimers()
+    const base = performance.now()
+    const tips = new TipBuffer(60_000)
+    rest('finger', 0.25, 0.25, 0, 5000).forEach(p => tips.push({ ...p, t: p.t + base }))
+    const live = createLive({ getTerms: () => TERMS, tips, player: { play: () => ({ startedAt: performance.now() }), setEnabled: () => {} } })
+    const got: { ids: number[]; at: number }[] = []
+    live.onResolution(r => got.push({ ids: r.terms.map(x => x.id), at: Math.round(performance.now() - base) }))
+    const item = (content: string, startTime: number): WordItem => ({ content, startTime, isPartial: true, arrivedAt: performance.now() })
+    return { base, live, got, item }
+  }
+  afterEach(() => { vi.useRealTimers() })
+
+  it('"this" arrives 600 ms after it was said, "top" 150 ms later: the top group, at once', () => {
+    const { base, live, got, item } = run()
+    vi.advanceTimersByTime(1100)
+    const first = item('this', 0.5)
+    live.handleItems([first], base)
+    expect(got).toEqual([])
+    vi.advanceTimersByTime(150)
+    live.handleItems([first, item('top', 0.7)], base)
+    expect(got).toEqual([{ ids: [4], at: 1250 }])
+  })
+  it('"this" then "is" 100 ms later: the plain term at about 100 ms, not 300', () => {
+    const { base, live, got, item } = run()
+    vi.advanceTimersByTime(1100)
+    const first = item('this', 0.5)
+    live.handleItems([first], base)
+    vi.advanceTimersByTime(100)
+    live.handleItems([first, item('is', 0.6)], base)
+    expect(got).toEqual([{ ids: [1], at: 1200 }])
+    vi.advanceTimersByTime(500)
+    expect(got).toHaveLength(1)
+  })
+  it('"this" with nothing after it: resolved 300 ms after it arrived', () => {
+    const { base, live, got, item } = run()
+    vi.advanceTimersByTime(1100)
+    live.handleItems([item('this', 0.5)], base)
+    vi.advanceTimersByTime(299)
+    expect(got).toEqual([])
+    vi.advanceTimersByTime(1)
+    expect(got).toEqual([{ ids: [1], at: 1400 }])
+  })
+  it('"this" then only "whole": still waits, until "thing" (or the cap)', () => {
+    const { base, live, got, item } = run()
+    vi.advanceTimersByTime(1100)
+    const first = item('this', 0.5)
+    live.handleItems([first], base)
+    vi.advanceTimersByTime(100)
+    const whole = item('whole', 0.6)
+    live.handleItems([first, whole], base)
+    expect(got).toEqual([])
+    vi.advanceTimersByTime(100)
+    live.handleItems([first, whole, item('thing', 0.7)], base)
+    expect(got).toEqual([{ ids: [6], at: 1300 }])
   })
 })

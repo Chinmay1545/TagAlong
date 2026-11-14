@@ -9,9 +9,10 @@ const area = (b: Box) => b.w * b.h
 
 // The short overview of a board: groups that are not inside another group, and single terms in no group,
 // in reading order. "Inside" is by box, so it works for whatever phrases the reader produced.
-export function overview(terms: Term[]): string[] {
+export function topLevel(terms: Term[]): Term[] {
   const groups = terms.filter(t => GROUP.test(t.phrase))
   // Two groups with the same box: the lower id is the outer one, so only one of them survives.
   const covers = (g: Term, t: Term) => g !== t && inside(t.box, g.box) && (!GROUP.test(t.phrase) || area(g.box) > area(t.box) || g.id < t.id)
-  return readingOrder(terms.filter(t => !groups.some(g => covers(g, t)))).map(t => t.phrase)
+  return readingOrder(terms.filter(t => !groups.some(g => covers(g, t))))
 }
+export const overview = (terms: Term[]): string[] => topLevel(terms).map(t => t.phrase)

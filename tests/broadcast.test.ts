@@ -25,6 +25,7 @@ describe('broadcast builders', () => {
   it('final, board, mode', () => {
     expect(finalMsg('a this', 'a ATP')).toEqual({ type: 'final', said: 'a this', meant: 'a ATP' })
     expect(boardMsg(res('board', 'x', 'y'))).toEqual({ type: 'board', phrases: ['x', 'y'] })
+    expect(boardMsg({ word: { word: 'board', t: 0, isPointer: false }, terms: [term('2x, in the top'), term('the top: 2x')].map((t, i) => ({ ...t, box: { x: 0, y: 0, w: 0.9 + i * 0.1, h: 1 } })) } as Resolution)).toEqual({ type: 'board', phrases: ['the top: 2x'] })
     expect(modeMsg(true)).toEqual({ type: 'mode', withoutApp: true })
   })
 })

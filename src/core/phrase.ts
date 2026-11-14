@@ -1,3 +1,4 @@
+import { groupKind } from './scope'
 import { speakMath } from './speakMath'
 import type { Box } from './types'
 
@@ -95,7 +96,8 @@ export function uniquePhrases<T extends { phrase: string; box: Box }>(terms: T[]
     const sorted = [...idx].sort((a, b) => centre(terms[a].box)[axis] - centre(terms[b].box)[axis] || a - b)
     sorted.forEach((i, rank) => {
       const p = originalOf(terms[i])
-      if (sorted.length === 2) renamed.set(i, withAdjective(p, axis === 'y' ? (rank ? 'lower' : 'upper') : (rank ? 'right' : 'left')))
+      // A group phrase keeps `the KIND: ` at the front (groupKind needs it), so it always takes the suffix form.
+      if (sorted.length === 2 && !groupKind(p)) renamed.set(i, withAdjective(p, axis === 'y' ? (rank ? 'lower' : 'upper') : (rank ? 'right' : 'left')))
       else renamed.set(i, `${p.trim().replace(/\s+/g, ' ')}, ${ORDER[rank] ?? `number ${rank + 1}`} from the ${axis === 'y' ? 'top' : 'left'}`)
     })
   }

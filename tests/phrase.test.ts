@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { latexToPlain, positionWords, phraseFor, uniquePhrases } from '../src/core/phrase'
+import { groupKind } from '../src/core/scope'
 import type { Term } from '../src/core/types'
 
 const box = (cx: number, cy: number) => ({ x: cx - 0.05, y: cy - 0.05, w: 0.1, h: 0.1 })
@@ -114,6 +115,12 @@ describe('phraseFor', () => {
 
 describe('uniquePhrases', () => {
   const t = (id: number, latex: string, phrase: string, cx: number, cy: number): Term => ({ id, latex, phrase, box: box(cx, cy) })
+
+  it('two equal groups keep the group form (suffix), so groupKind still matches', () => {
+    const out = uniquePhrases([t(1, '2x', 'the bottom: 2', 0.5, 0.2), t(2, '2x', 'the bottom: 2', 0.5, 0.6)])
+    expect(out.map(o => o.phrase)).toEqual(['the bottom: 2, first from the top', 'the bottom: 2, second from the top'])
+    for (const o of out) expect(groupKind(o.phrase)).toBe('bottom')
+  })
 
   it('tells apart a numerator and denominator that got the same phrase', () => {
     const out = uniquePhrases([t(1, '2x', 'the 2 x in the middle', 0.5, 0.42), t(2, '2x', 'the 2 x in the middle', 0.5, 0.52)])

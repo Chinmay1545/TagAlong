@@ -58,9 +58,12 @@ export function parseCameraMsg(raw: string): CameraMsg | null {
   }
 }
 
+// Clip the same way the server and TTS do (trim, then MAX_PHRASE), so one long equation cannot get a whole message dropped.
+export const clipPhrase = (p: string) => p.trim().slice(0, MAX_PHRASE)
+
 export function whisperFromResolution(r: Resolution): CameraMsg | null {
   if (!r.terms.length) return null
-  return { type: 'whisper', word: r.word.word, items: r.terms.map(t => ({ phrase: t.phrase, x: t.box.x + t.box.w / 2 })) }
+  return { type: 'whisper', word: r.word.word, items: r.terms.slice(0, MAX_ITEMS).map(t => ({ phrase: clipPhrase(t.phrase), x: t.box.x + t.box.w / 2 })) }
 }
 
 export const studentLinkPath = (room: string, token: string) => `/?student&room=${room}&t=${token}`

@@ -42,6 +42,23 @@ describe('judge screen: demo mode and live mode', () => {
   })
 })
 
+describe('judge screen: groups on the overlay', () => {
+  const GROUP = { id: 9, latex: '', phrase: 'the top: 2x times x plus 3', box: { x: 0.2, y: 0.2, w: 0.45, h: 0.15 } }
+  it('a group is not labelled (and not counted in TERMS) until it is the one just resolved', async () => {
+    const j = await mountJudge('')
+    await act(async () => { j.fakes.setTerms!([...FIXTURE, GROUP]) })
+    expect(j.stat('terms')).toBe('3')
+    await j.redraw()
+    expect(j.fakes.texts).toContain(FIXTURE[0].phrase)
+    expect(j.fakes.texts).not.toContain(GROUP.phrase)
+    for (let i = 0; i < 12; i++) { j.fakes.pushPoint!({ kind: 'finger', x: 0.375, y: 0.27, confidence: 1, t: performance.now() }); await j.wait(30) }
+    await j.key('p')
+    expect(j.log()[0]).toMatch(/^this → the top: 2x times x plus 3/)
+    await j.redraw()
+    expect(j.fakes.texts).toContain(GROUP.phrase)
+  })
+})
+
 describe('judge screen: reset button', () => {
   it('live: asks the board loop to start again and the boxes go at once', async () => {
     const j = await mountJudge('')

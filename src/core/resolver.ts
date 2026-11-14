@@ -203,9 +203,9 @@ export function readPointer(word: WordEvent, terms: Term[], tips: TipBuffer, whe
   const windowMs = when?.windowMs ?? TIP_WINDOW_MS
   const w = word.word.toLowerCase().replace(/[^a-z]/g, '')
   if (w === 'these' || w === 'those') {
-    // A sweep across several terms: no rest needed.
+    // A sweep across several single terms (not groups, or the gaps between terms would land on groups): no rest needed.
     const track = tips.lead(t - 1000, t + 1000)
-    const found = termsAlongPath(terms, track, t - 1000, t + 1000)
+    const found = termsAlongPath(terms.filter(x => !groupKind(x.phrase)), track, t - 1000, t + 1000)
     return found.length ? { resolution: { word, terms: found }, aim: null, miss: null, landing: false } : none(track.length ? 'empty-space' : 'not-pointing')
   }
   // this / that / here: whisper only if the pointer (of any kind) rested on one spot around the word.

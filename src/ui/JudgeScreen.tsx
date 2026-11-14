@@ -30,6 +30,7 @@ import { ReportCard } from './ReportCard'
 import { NotesPanel } from './NotesPanel'
 import { ModeSwitch, PointerLog, Readout, StatsStrip, type Last } from './Panels'
 import { Readiness } from './Readiness'
+import { groupKind } from '../core/scope'
 import { createBroadcaster, resolutionMsg, finalMsg, boardMsg, modeMsg, subscribe, markedMsg, assistMsg, noticeMsg } from '../live/broadcast'
 import { createClassroom, type Classroom } from '../live/classroom'
 import { ClassPanel } from './ClassPanel'
@@ -217,7 +218,7 @@ export function JudgeScreen() {
   const setTerms = (terms: Term[]) => {
     termsRef.current = terms
     boardAtRef.current = performance.now()
-    setTermCount(terms.length)
+    setTermCount(terms.filter(t => !groupKind(t.phrase)).length)
     prepare(terms)
     classRef.current.board(terms)
     liveRef.current.checkHeld() // a "this" said before this box was read can be whispered now
@@ -235,7 +236,7 @@ export function JudgeScreen() {
           const terms = await loadFixture()
           if (cancelled) return
           termsRef.current = terms
-          setTermCount(terms.length)
+          setTermCount(terms.filter(t => !groupKind(t.phrase)).length)
           prepare(terms)
           classRef.current.board(terms) // student phones get the saved board too
         } catch (e) {
@@ -307,6 +308,7 @@ export function JudgeScreen() {
       const hue = signalRef.current?.muted ? NEUTRAL : ACCENT // without app: show the match, not as a whisper
       for (const t of termsRef.current) {
         const on = hit.includes(t)
+        const group = !!groupKind(t.phrase)
         const x = flipX(t.box.x, t.box.w) * W, y = t.box.y * H
         if (on) {
           ctx.globalAlpha = 0.12
@@ -316,8 +318,10 @@ export function JudgeScreen() {
         }
         ctx.lineWidth = on ? 2 : 1
         ctx.strokeStyle = on ? hue : LINE
+        ctx.globalAlpha = group && !on ? 0.4 : 1 // a group box is a faint outline; its label would pile on its terms' labels
         drawBox(ctx, t.box, W, H)
-        drawLabel(ctx, t.phrase, x, y - 4, on ? hue : null, small)
+        ctx.globalAlpha = 1
+        if (!group || on) drawLabel(ctx, t.phrase, x, y - 4, on ? hue : null, small)
       }
       const tip = activePointer(tipsRef.current.all(), now) // laser, then stick, then finger
       if (signalRef.current && !reduceMotion?.matches) drawSignal(ctx, signalRef.current, tip, now, W, H)
