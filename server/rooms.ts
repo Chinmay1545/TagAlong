@@ -22,7 +22,7 @@ const PING_MS = 25_000 // keeps proxies from closing idle sockets and finds dead
 export const roomToken = (secret: string, room: string) =>
   createHmac('sha256', secret).update(`room:${room}`).digest('base64url').slice(0, 24)
 
-type Room = { camera: WebSocket | null; open: boolean; students: Set<WebSocket>; board: string[] | null; phrases: Set<string>; grace?: NodeJS.Timeout }
+type Room = { camera: WebSocket | null; open: boolean; students: Set<WebSocket>; board: Extract<ServerToStudent, { type: 'board' }> | null; phrases: Set<string>; grace?: NodeJS.Timeout }
 
 function reject(socket: Duplex, status: number, text: string) {
   socket.write(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`)
@@ -76,7 +76,7 @@ export function createRoomHub({ access = LOCAL_ACCESS, maxStudents = MAX_STUDENT
         return
       }
       if (m.type === 'whisper') m.items.forEach(i => remember(r, i.phrase))
-      if (m.type === 'board') { r.board = m.phrases; m.phrases.forEach(p => remember(r, p)) }
+      if (m.type === 'board') { r.board = m; m.phrases.forEach(p => remember(r, p)); m.overview?.forEach(p => remember(r, p)) }
       toStudents(r, m)
     })
     ws.on('close', () => {
@@ -91,7 +91,7 @@ export function createRoomHub({ access = LOCAL_ACCESS, maxStudents = MAX_STUDENT
     const r = roomOf(name)
     r.students.add(ws)
     send(ws, { type: 'status', live: live(r) })
-    if (r.board) send(ws, { type: 'board', phrases: r.board })
+    if (r.board) send(ws, r.board)
     listeners(r)
     // Students only listen: incoming messages are ignored.
     ws.on('close', () => { r.students.delete(ws); listeners(r); forget(name, r) })

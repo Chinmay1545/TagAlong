@@ -133,6 +133,17 @@ describe('room hub', () => {
     expect(await s.next()).toEqual({ type: 'board', phrases: ['the x on the left', 'the 5 on the left'] })
   })
 
+  it('remembers the overview with the board: late joiners get it, and its phrases may be voiced', async () => {
+    const { hub, camera, student } = await start()
+    const c = await camera()
+    c.ws.send(JSON.stringify({ type: 'board', phrases: ['x'], overview: ['the equation: x plus 1 equals 2'] }))
+    await settle()
+    const s = await student()
+    expect(await s.next()).toEqual({ type: 'status', live: true })
+    expect(await s.next()).toEqual({ type: 'board', phrases: ['x'], overview: ['the equation: x plus 1 equals 2'] })
+    expect(hub.allowsPhrase('math201', 'the equation: x plus 1 equals 2')).toBe(true)
+  })
+
   it('tells the camera how many students are listening', async () => {
     const { camera, student } = await start()
     const c = await camera()

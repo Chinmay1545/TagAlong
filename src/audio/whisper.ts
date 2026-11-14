@@ -19,6 +19,7 @@ type Opts = {
   ctx?: AudioContext
   speak?: (text: string) => void
   now?: () => number // shared app clock, default performance.now
+  speaking?: () => boolean // is the phone's own voice talking (default speechSynthesis.speaking)
 }
 
 const defaultFetch = async (text: string) => {
@@ -39,7 +40,7 @@ const defaultSpeak = (text: string) => {
   speechSynthesis.speak(u)
 }
 
-type Active = { key: string; src: AudioBufferSourceNode; gain: GainNode; startMs: number; endMs: number }
+type Active = { key: string; src: AudioBufferSourceNode; gain: GainNode; startMs: number; endMs: number; soft: boolean }
 const FADE_S = 0.03
 const FLUSH_LEAD_MS = 80
 
@@ -47,6 +48,7 @@ export function createWhisperPlayer(opts: Opts = {}) {
   const fetchTts = opts.fetchTts ?? defaultFetch
   const speak = opts.speak ?? defaultSpeak
   const nowPerf = opts.now ?? (() => performance.now())
+  const speaking = opts.speaking ?? (() => typeof speechSynthesis !== 'undefined' && speechSynthesis.speaking)
   let ctx = opts.ctx
   const getCtx = () => (ctx ??= new AudioContext())
   const bufs = new Map<string, AudioBuffer>() // missing = unprepared or failed -> speech fallback; failures are retried by prepare
@@ -73,7 +75,18 @@ export function createWhisperPlayer(opts: Opts = {}) {
       }))
     },
     unlock,
-    play(r: Resolution): { startedAt: number } | null {
+    // When everything scheduled so far has finished sounding (performance.now clock); <= now means quiet.
+    quietAt(): number {
+      const now = nowPerf()
+      if (speaking()) return now + FLUSH_LEAD_MS // the phone voice has no known end: ask again soon
+      const c = ctx
+      if (!c) return 0
+      const nowMs = c.currentTime * 1000
+      const outMs = (c.outputLatency ?? c.baseLatency ?? 0) * 1000
+      return active.reduce((end, a) => Math.max(end, now + (a.endMs - nowMs) + outMs), 0)
+    },
+    // soft: background audio (the board overview) that any later non-soft whisper cuts off at once.
+    play(r: Resolution, o: { soft?: boolean } = {}): { startedAt: number } | null {
       if (!on || r.terms.length === 0) return null
       if (silent) return { startedAt: nowPerf() } // delivered (to the room), nothing sounds here
       let first: number | null = null
@@ -92,7 +105,8 @@ export function createWhisperPlayer(opts: Opts = {}) {
         const dup = active.find(a => a.key === key)
         if (dup) { first ??= Math.max(toPerf(dup.startMs), nowPerf()); continue } // already sounding: the student hears it from now
         let base = nowMs
-        if (first === null && queue.next(nowMs) - nowMs > MAX_QUEUE_WAIT_MS) {
+        const cutsSoft = !o.soft && active.some(a => a.soft)
+        if (first === null && (cutsSoft || queue.next(nowMs) - nowMs > MAX_QUEUE_WAIT_MS)) {
           // latest wins: fade out what is sounding, drop what has not started
           for (const a of active) {
             if (a.startMs <= nowMs) {
@@ -117,7 +131,7 @@ export function createWhisperPlayer(opts: Opts = {}) {
           gain.connect(pan).connect(c.destination)
         } else gain.connect(c.destination)
         src.start(startMs / 1000)
-        active.push({ key, src, gain, startMs, endMs: startMs + buf.duration * 1000 })
+        active.push({ key, src, gain, startMs, endMs: startMs + buf.duration * 1000, soft: !!o.soft })
         first ??= toPerf(startMs)
       }
       return first === null ? null : { startedAt: first }

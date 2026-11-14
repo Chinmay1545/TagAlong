@@ -45,7 +45,7 @@ describe('classroom (camera device side)', () => {
     classroom.notice('Class is ending.')
     expect(last().sent).toEqual([
       { type: 'status', open: true },
-      { type: 'board', phrases: ['the x on the left', 'the 6 on the right'] },
+      { type: 'board', phrases: ['the x on the left', 'the 6 on the right'], overview: ['the x on the left', 'the 6 on the right'] },
       { type: 'whisper', word: 'this', items: [{ phrase: 'the x on the left', x: 0.15000000000000002 }] },
       { type: 'notice', text: 'Class is ending.' },
     ])
@@ -59,7 +59,7 @@ describe('classroom (camera device side)', () => {
     last().sent.length = 0
     last().on.onState?.('reconnecting')
     last().on.onState?.('open')
-    expect(last().sent).toEqual([{ type: 'status', open: true }, { type: 'board', phrases: ['the x on the left'] }])
+    expect(last().sent).toEqual([{ type: 'status', open: true }, { type: 'board', phrases: ['the x on the left'], overview: ['the x on the left'] }])
   })
 
   it('reports listener counts and connection state', async () => {

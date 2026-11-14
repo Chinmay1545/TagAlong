@@ -46,6 +46,18 @@ describe('parseCameraMsg (what the camera device may send)', () => {
     expect(parseCameraMsg(JSON.stringify({ type: 'board', phrases: [] }))).toEqual({ type: 'board', phrases: [] }))
 })
 
+describe('board overview', () => {
+  const board = (extra: object) => JSON.stringify({ type: 'board', phrases: ['a', 'b'], ...extra })
+  it('is optional and relayed when valid', () => {
+    expect(parseCameraMsg(board({ overview: ['the equation: a'] }))).toEqual({ type: 'board', phrases: ['a', 'b'], overview: ['the equation: a'] })
+    expect(parseCameraMsg(board({}))).toEqual({ type: 'board', phrases: ['a', 'b'] })
+  })
+  it('rejects a bad overview', () => {
+    for (const overview of ['x', [3], ['p'.repeat(201)], Array.from({ length: MAX_BOARD_PHRASES + 1 }, () => 'p'), ['']])
+      expect(parseCameraMsg(board({ overview })), JSON.stringify(overview).slice(0, 30)).toBeNull()
+  })
+})
+
 describe('whisperFromResolution', () => {
   const r = (terms: { phrase: string; x: number; w: number }[]): Resolution => ({
     word: { word: 'these', t: 1 } as Resolution['word'],

@@ -1,5 +1,6 @@
 import type { Resolution, Term } from '../core/types'
 import { readingOrder } from './boardQuery'
+import { overview } from './overview'
 import { whisperFromResolution, type CameraMsg } from './roomProtocol'
 import { connectRoom, roomSocketUrl, type RoomState } from './roomClient'
 
@@ -65,7 +66,7 @@ export function createClassroom(deps: Deps = defaultDeps()) {
     },
     whisper(r: Resolution) { const m = whisperFromResolution(r); if (m) send(m) },
     board(terms: Term[]) {
-      board = { type: 'board', phrases: readingOrder(terms).map(t => t.phrase) }
+      board = { type: 'board', phrases: readingOrder(terms).map(t => t.phrase), overview: overview(terms) }
       send(board)
     },
     notice(text: string) { send({ type: 'notice', text }) },

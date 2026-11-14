@@ -56,6 +56,32 @@ describe('createWhisperPlayer', () => {
     return { p, started, speak }
   }
 
+  it('quietAt: now when nothing sounds, the end of everything scheduled while it does', async () => {
+    const { p } = setup()
+    expect(p.quietAt()).toBeLessThanOrEqual(5000)
+    await p.prepare([term(1, 'x squared')])
+    p.play(res([term(1, 'x squared')])) // 0.5 s clip starting now
+    expect(p.quietAt()).toBe(5500)
+  })
+  it('quietAt: the phone voice fallback counts while it is speaking', () => {
+    let speaking = true
+    const p = createWhisperPlayer({ ctx: fakeCtx().ctx, speak: vi.fn(), now, speaking: () => speaking })
+    expect(p.quietAt()).toBeGreaterThan(5000)
+    speaking = false
+    expect(p.quietAt()).toBeLessThanOrEqual(5000)
+  })
+  it('a whisper cuts in on a sounding overview, but queues behind another whisper', async () => {
+    const { ctx, started } = fakeCtx(0.05)
+    const p = createWhisperPlayer({ fetchTts: async t => new ArrayBuffer(t.length), ctx, speak: vi.fn(), now })
+    await p.prepare([term(1, 'overview'), term(2, 'whisper'), term(3, 'other')])
+    p.play(res([term(1, 'overview')]), { soft: true })
+    p.play(res([term(2, 'whisper')]))
+    expect(started[0].stop).toHaveBeenCalled() // the overview was stopped
+    expect(started[1].when).toBeCloseTo(2.08) // the whisper starts at once (flush lead), not after the overview
+    p.play(res([term(3, 'other')]))
+    expect(started[1].stop).not.toHaveBeenCalled() // a whisper after a whisper still waits its turn
+    expect(started[2].when).toBeGreaterThan(2.08)
+  })
   it('empty terms -> null', () => {
     const { p, started, speak } = setup()
     expect(p.play(res([]))).toBeNull()

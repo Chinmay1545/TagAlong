@@ -12,7 +12,8 @@ import '../phone/phone.css'
 // A blind student's own phone in a classroom: opened from the saved course link (?student&room=..&t=..).
 // One tap to start (phones block sound until a tap), then it only listens: whispers are voiced on this
 // phone (server voice, cached per phrase; the phone's own voice if that fails), panned left/right by where
-// the term is on the board. Status goes to the screen reader. Nothing is sent back to the teacher.
+// the term is on the board. Status goes to the screen reader, but only once our own audio is quiet, and the
+// visual stage is hidden from it: a whisper is heard once, through our audio, never read twice. Nothing is sent back to the teacher.
 
 // The server voice for this room: the room token stands in for the access key, and only phrases the
 // camera published in this room are voiced.
@@ -26,7 +27,7 @@ export const roomTts = (room: string, token: string) => async (text: string): Pr
   return r.arrayBuffer()
 }
 
-type Player = Pick<ReturnType<typeof createWhisperPlayer>, 'unlock' | 'play' | 'prepare'>
+type Player = Pick<ReturnType<typeof createWhisperPlayer>, 'unlock' | 'play' | 'prepare'> & Partial<Pick<ReturnType<typeof createWhisperPlayer>, 'quietAt'>>
 type Deps = {
   connect: (url: string, on: { onMessage(m: unknown): void; onState?(s: RoomState): void }) => { close(): void }
   player: Player
@@ -40,6 +41,7 @@ type Deps = {
 // One voice per whisper, the server voice (ElevenLabs) first: a phrase whose audio is not ready yet waits up
 // to this long for it. Only if it fails or is slower does the phone's own voice say it, and only once.
 const VOICE_WAIT_MS = 1500
+const ANNOUNCE_POLL_MS = 150
 
 // Terms rebuilt from relayed phrases: only the phrase and the horizontal centre (for panning) matter here.
 const asTerms = (items: WhisperItem[]): Term[] => items.map((it, i) => ({ id: i + 1, latex: '', phrase: it.phrase, box: { x: it.x, y: 0, w: 0, h: 0 } }))
@@ -67,7 +69,25 @@ export function RoomStudentView({ room, token, deps, autoStart, startedText, lab
   const [said, setSaidRaw] = useState('')
   // A live region only speaks when its text changes, so a repeat gets an invisible zero-width space toggled on.
   const setSaid = (t: string) => setSaidRaw(prev => (prev === t ? t + '​' : t))
+  // Status text waits for our own audio to end, so VoiceOver never talks over a whisper. A newer one replaces an older pending one.
+  const pending = useRef<string | null>(null)
+  const poll = useRef<ReturnType<typeof setInterval> | null>(null)
+  const announce = (text: string) => {
+    const wait = () => (d.current!.player.quietAt?.() ?? 0) - performance.now()
+    if (wait() <= 0) { pending.current = null; setSaid(text); return }
+    pending.current = text
+    poll.current ??= setInterval(() => {
+      if (wait() > 0 || pending.current === null) return
+      const t = pending.current
+      pending.current = null
+      clearInterval(poll.current!)
+      poll.current = null
+      setSaid(t)
+    }, ANNOUNCE_POLL_MS)
+  }
   const board = useRef<string[]>([])
+  const overview = useRef<string[]>([])
+  const overviewGen = useRef(0) // bumped by every whisper: an overview still waiting for its voice then never plays
   const last = useRef<Resolution | null>(null)
   const wasOpen = useRef(false)
   // Connection tones: one for joining, one when a class we waited for starts. Never for whispers.
@@ -78,14 +98,22 @@ export function RoomStudentView({ room, token, deps, autoStart, startedText, lab
   const stop = useRef<(() => void) | null>(null)
   // Whispers play strictly in order; each one first waits (bounded) for its server voice.
   const chain = useRef<Promise<void>>(Promise.resolve())
-  const say = (r: Resolution) => {
+  // soft: the board overview, which any whisper cuts off (see the whisper player).
+  const say = (r: Resolution, soft = false) => {
     const { player, voiceWaitMs } = d.current!
+    if (!soft) overviewGen.current++
+    const gen = overviewGen.current
     const ready = player.prepare(r.terms).catch(() => {})
     chain.current = chain.current
       .then(() => Promise.race([ready, new Promise<void>(res => setTimeout(res, voiceWaitMs))]))
-      .then(() => { player.play({ ...r, word: { ...r.word, t: performance.now() } }) })
+      .then(() => {
+        if (soft && gen !== overviewGen.current) return
+        const now = { ...r, word: { ...r.word, t: performance.now() } }
+        if (soft) player.play(now, { soft: true })
+        else player.play(now)
+      })
   }
-  useEffect(() => () => stop.current?.(), [])
+  useEffect(() => () => { stop.current?.(); if (poll.current) clearInterval(poll.current) }, [])
   useEffect(() => { if (autoStart) start() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const start = () => {
@@ -94,7 +122,7 @@ export function RoomStudentView({ room, token, deps, autoStart, startedText, lab
     if (!autoStart) { player.unlock(); earcons.unlock(); d.current!.unlockVoice() }
     const release = keepAwake()
     setStarted(true)
-    setSaid(startedText ?? `Joining ${name}.`)
+    announce(startedText ?? `Joining ${name}.`)
     const conn = connect(roomSocketUrl(location, { role: 'student', room, token }), {
       onMessage: raw => {
         const m = raw as ServerToStudent
@@ -105,18 +133,22 @@ export function RoomStudentView({ room, token, deps, autoStart, startedText, lab
           setLive(m.live)
           const skip = quiet.current && m.live
           quiet.current = false
-          if (!skip) setSaid(m.live ? `Connected to ${name}.` : `Waiting for ${name} to start.`) }
-        else if (m.type === 'board') { board.current = m.phrases; void player.prepare(asTerms(m.phrases.map(p => ({ phrase: p, x: 0.5 })))) }
+          if (!skip) announce(m.live ? `Connected to ${name}.` : `Waiting for ${name} to start.`) }
+        else if (m.type === 'board') { board.current = m.phrases
+          overview.current = m.overview ?? []
+          // The overview first (the button should play at once), then the pieces a whisper may need.
+          if (m.overview?.length) void player.prepare(asTerms(m.overview.map(p => ({ phrase: p, x: 0.5 }))))
+          void player.prepare(asTerms(m.phrases.map(p => ({ phrase: p, x: 0.5 })))) }
         else if (m.type === 'whisper') {
           const r = asResolution(m.word, m.items)
           last.current = r
           say(r)
           setShown(p => ({ word: m.word, text: m.items.map(i => i.phrase).join(' and '), n: (p?.n ?? 0) + 1 }))
-        } else if (m.type === 'notice') setSaid(m.text)
+        } else if (m.type === 'notice') announce(m.text)
       },
       onState: s => {
-        if (s === 'reconnecting') { setSaid('Reconnecting…'); setLive(false); setDrop(true); if (!dropped.current) earcons.play('drop'); dropped.current = true }
-        else if (s === 'open') { setDrop(false); if (wasOpen.current) { setSaid('Back.'); earcons.play('back') } wasOpen.current = true; dropped.current = false }
+        if (s === 'reconnecting') { announce('Reconnecting…'); setLive(false); setDrop(true); if (!dropped.current) earcons.play('drop'); dropped.current = true }
+        else if (s === 'open') { setDrop(false); if (wasOpen.current) { announce('Back.'); earcons.play('back') } wasOpen.current = true; dropped.current = false }
       },
     })
     stop.current = () => { conn.close(); release() }
@@ -124,12 +156,13 @@ export function RoomStudentView({ room, token, deps, autoStart, startedText, lab
 
   const repeat = () => {
     if (last.current) say(last.current)
-    else setSaid('Nothing to repeat yet.')
+    else announce('Nothing to repeat yet.')
   }
   const readBoard = () => {
-    if (!board.current.length) { setSaid('The board is empty.'); return }
-    say(asResolution('board', board.current.map(p => ({ phrase: p, x: 0.5 }))))
-    setShown(p => ({ word: 'On the board', text: board.current.join(', '), n: (p?.n ?? 0) + 1 }))
+    if (!board.current.length) { announce('The board is empty.'); return }
+    const said = overview.current.length ? overview.current : board.current
+    say(asResolution('board', said.map(p => ({ phrase: p, x: 0.5 }))), true)
+    setShown(p => ({ word: 'On the board', text: said.join(', '), n: (p?.n ?? 0) + 1 }))
   }
 
   if (!started) {
@@ -154,12 +187,11 @@ export function RoomStudentView({ room, token, deps, autoStart, startedText, lab
       {drop && <div className="rs-banner" aria-hidden="true">Reconnecting</div>}
       <section className="rs-stage">
         {shown ? (
-          <div className="rs-now" key={shown.n}>
+          <div className="rs-now" key={shown.n} aria-hidden="true">
             <span className="rs-word" aria-hidden="true">{shown.word}</span>
-            {/* The real text stays one plain node for the screen reader; the per-word copy on top only animates. */}
             <p className="rs-phrase">{shown.text}<span className="rs-words" aria-hidden="true">{words(shown.text)}</span></p>
           </div>
-        ) : <p className="rs-empty">{live ? 'Listening.' : `Waiting for ${name} to start.`}</p>}
+        ) : <p className="rs-empty" aria-hidden="true">{live ? 'Listening.' : `Waiting for ${name} to start.`}</p>}
         <p className="sr" aria-live="assertive" aria-atomic="true">{said}</p>
       </section>
       <section className="rs-actions" aria-label="Listen">
