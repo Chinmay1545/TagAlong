@@ -82,6 +82,17 @@ describe('createWhisperPlayer', () => {
     expect(started[1].stop).not.toHaveBeenCalled() // a whisper after a whisper still waits its turn
     expect(started[2].when).toBeGreaterThan(2.08)
   })
+  it('a whisper cancels an overview the phone voice is speaking, but not other speech', () => {
+    const cancel = vi.fn()
+    const p = createWhisperPlayer({ ctx: fakeCtx().ctx, speak: vi.fn(), now, speaking: () => true, cancelSpeech: cancel })
+    p.play(res([term(1, 'whisper')]))
+    expect(cancel).not.toHaveBeenCalled()
+    p.play(res([term(2, 'overview')]), { soft: true })
+    p.play(res([term(3, 'whisper two')]))
+    expect(cancel).toHaveBeenCalledTimes(1)
+    p.play(res([term(4, 'whisper three')]))
+    expect(cancel).toHaveBeenCalledTimes(1)
+  })
   it('empty terms -> null', () => {
     const { p, started, speak } = setup()
     expect(p.play(res([]))).toBeNull()

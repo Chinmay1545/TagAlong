@@ -19,6 +19,7 @@ type Opts = {
   ctx?: AudioContext
   speak?: (text: string) => void
   now?: () => number // shared app clock, default performance.now
+  cancelSpeech?: () => void // stop the phone's own voice (default speechSynthesis.cancel)
   speaking?: () => boolean // is the phone's own voice talking (default speechSynthesis.speaking)
 }
 
@@ -49,6 +50,8 @@ export function createWhisperPlayer(opts: Opts = {}) {
   const speak = opts.speak ?? defaultSpeak
   const nowPerf = opts.now ?? (() => performance.now())
   const speaking = opts.speaking ?? (() => typeof speechSynthesis !== 'undefined' && speechSynthesis.speaking)
+  const cancelSpeech = opts.cancelSpeech ?? (() => speechSynthesis.cancel())
+  let softSpeech = false // the phone voice is (or was) saying a soft item
   let ctx = opts.ctx
   const getCtx = () => (ctx ??= new AudioContext())
   const bufs = new Map<string, AudioBuffer>() // missing = unprepared or failed -> speech fallback; failures are retried by prepare
@@ -89,13 +92,14 @@ export function createWhisperPlayer(opts: Opts = {}) {
     play(r: Resolution, o: { soft?: boolean } = {}): { startedAt: number } | null {
       if (!on || r.terms.length === 0) return null
       if (silent) return { startedAt: nowPerf() } // delivered (to the room), nothing sounds here
+      if (!o.soft && softSpeech) { softSpeech = false; if (speaking()) cancelSpeech() } // a whisper cuts a spoken overview too
       let first: number | null = null
       let c: AudioContext | null = null
       for (const t of r.terms) {
         const key = clip(t.phrase)
         if (!key) continue
         const buf = bufs.get(key)
-        if (!buf) { speak(key); first ??= nowPerf(); continue }
+        if (!buf) { speak(key); softSpeech = !!o.soft; first ??= nowPerf(); continue }
         c ??= getCtx()
         const nowMs = c.currentTime * 1000
         const outMs = (c.outputLatency ?? c.baseLatency ?? 0) * 1000

@@ -71,9 +71,12 @@ export function RoomStudentView({ room, token, deps, autoStart, startedText, lab
   const setSaid = (t: string) => setSaidRaw(prev => (prev === t ? t + '​' : t))
   // Status text waits for our own audio to end, so VoiceOver never talks over a whisper. A newer one replaces an older pending one.
   const pending = useRef<string | null>(null)
+  const inflight = useRef(0) // say() calls not yet played or dropped
+  const wakeSoft = useRef(new Set<() => void>()) // ends the voice wait of overviews a whisper has made stale
   const poll = useRef<ReturnType<typeof setInterval> | null>(null)
   const announce = (text: string) => {
-    const wait = () => (d.current!.player.quietAt?.() ?? 0) - performance.now()
+    // Busy while a whisper is still waiting for its voice (inflight), or while audio sounds.
+    const wait = () => (inflight.current > 0 ? 1 : 0) || (d.current!.player.quietAt?.() ?? 0) - performance.now()
     if (wait() <= 0) { pending.current = null; setSaid(text); return }
     pending.current = text
     poll.current ??= setInterval(() => {
@@ -101,17 +104,24 @@ export function RoomStudentView({ room, token, deps, autoStart, startedText, lab
   // soft: the board overview, which any whisper cuts off (see the whisper player).
   const say = (r: Resolution, soft = false) => {
     const { player, voiceWaitMs } = d.current!
-    if (!soft) overviewGen.current++
+    inflight.current++
+    if (!soft) { overviewGen.current++; wakeSoft.current.forEach(w => w()); wakeSoft.current.clear() }
     const gen = overviewGen.current
+    const stale = () => soft && gen !== overviewGen.current
+    const voice = () => new Promise<void>(res => {
+      const t = setTimeout(res, voiceWaitMs)
+      if (soft) wakeSoft.current.add(() => { clearTimeout(t); res() })
+    })
     const ready = player.prepare(r.terms).catch(() => {})
     chain.current = chain.current
-      .then(() => Promise.race([ready, new Promise<void>(res => setTimeout(res, voiceWaitMs))]))
+      .then(() => (stale() ? undefined : Promise.race([ready, voice()])))
       .then(() => {
-        if (soft && gen !== overviewGen.current) return
+        if (stale()) return
         const now = { ...r, word: { ...r.word, t: performance.now() } }
         if (soft) player.play(now, { soft: true })
         else player.play(now)
       })
+      .finally(() => { inflight.current-- })
   }
   useEffect(() => () => { stop.current?.(); if (poll.current) clearInterval(poll.current) }, [])
   useEffect(() => { if (autoStart) start() }, []) // eslint-disable-line react-hooks/exhaustive-deps

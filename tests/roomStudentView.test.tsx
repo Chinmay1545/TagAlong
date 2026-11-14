@@ -163,6 +163,30 @@ describe('student phone (classroom relay)', () => {
     expect((t.player.play.mock.calls[0] as unknown[])[1]).toBeUndefined()
   })
 
+  it('an announcement waits while a whisper is still waiting for its voice', async () => {
+    const t = setup({ voiceWaitMs: 300, prepare: () => new Promise<void>(() => {}) })
+    t.start()
+    await t.recv({ type: 'whisper', word: 'this', items: [{ phrase: 'the 6 on the right', x: 0.8 }] })
+    await t.recv({ type: 'notice', text: 'Class is ending.' })
+    expect(t.said()).not.toBe('Class is ending.')
+    expect(t.player.play).not.toHaveBeenCalled()
+    await act(async () => { await sleep(500) })
+    expect(t.player.play).toHaveBeenCalledTimes(1)
+    expect(t.said()).toBe('Class is ending.')
+  })
+
+  it('a stale overview does not hold a whisper back while it waits for its voice', async () => {
+    const t = setup({ voiceWaitMs: 400, prepare: (ts: Term[]) => (ts[0].phrase.startsWith('the equation') ? new Promise<void>(() => {}) : Promise.resolve()) })
+    t.start()
+    await t.recv({ type: 'board', phrases: ['a'], overview: ['the equation: a'] })
+    fireEvent.click(screen.getByRole('button', { name: /what's on the board/i }))
+    await act(async () => { await sleep(20) }) // the overview now waits for its voice
+    await t.recv({ type: 'whisper', word: 'this', items: [{ phrase: 'the 6 on the right', x: 0.8 }] })
+    await act(async () => { await sleep(60) })
+    expect(t.player.play).toHaveBeenCalledTimes(1)
+    expect(t.player.play.mock.calls[0][0].terms[0].phrase).toBe('the 6 on the right')
+  })
+
   it('has no buttons that talk back to the teacher (one way only)', () => {
     const t = setup()
     t.start()
