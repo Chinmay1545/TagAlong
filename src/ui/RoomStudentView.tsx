@@ -29,7 +29,12 @@ type Deps = {
   player: Player
   keepAwake: () => () => void
   location: { protocol: string; host: string }
+  voiceWaitMs: number
 }
+
+// One voice per whisper, the server voice (ElevenLabs) first: a phrase whose audio is not ready yet waits up
+// to this long for it. Only if it fails or is slower does the phone's own voice say it, and only once.
+const VOICE_WAIT_MS = 1500
 
 // Terms rebuilt from relayed phrases: only the phrase and the horizontal centre (for panning) matter here.
 const asTerms = (items: WhisperItem[]): Term[] => items.map((it, i) => ({ id: i + 1, latex: '', phrase: it.phrase, box: { x: it.x, y: 0, w: 0, h: 0 } }))
@@ -42,6 +47,7 @@ export function RoomStudentView({ room, token, deps }: { room: string; token: st
     player: deps?.player ?? createWhisperPlayer({ fetchTts: roomTts(room, token) }),
     keepAwake: deps?.keepAwake ?? keepScreenAwake,
     location: deps?.location ?? window.location,
+    voiceWaitMs: deps?.voiceWaitMs ?? VOICE_WAIT_MS,
   }
   const [started, setStarted] = useState(false)
   const [phrase, setPhrase] = useState<string | null>(null)
@@ -53,6 +59,15 @@ export function RoomStudentView({ room, token, deps }: { room: string; token: st
   const last = useRef<Resolution | null>(null)
   const wasOpen = useRef(false)
   const stop = useRef<(() => void) | null>(null)
+  // Whispers play strictly in order; each one first waits (bounded) for its server voice.
+  const chain = useRef<Promise<void>>(Promise.resolve())
+  const say = (r: Resolution) => {
+    const { player, voiceWaitMs } = d.current!
+    const ready = player.prepare(r.terms).catch(() => {})
+    chain.current = chain.current
+      .then(() => Promise.race([ready, new Promise<void>(res => setTimeout(res, voiceWaitMs))]))
+      .then(() => { player.play({ ...r, word: { ...r.word, t: performance.now() } }) })
+  }
   useEffect(() => () => stop.current?.(), [])
 
   const start = () => {
@@ -69,7 +84,7 @@ export function RoomStudentView({ room, token, deps }: { room: string; token: st
         else if (m.type === 'whisper') {
           const r = asResolution(m.word, m.items)
           last.current = r
-          player.play(r)
+          say(r)
           setPhrase(m.items.map(i => i.phrase).join(' and '))
         } else if (m.type === 'notice') setSaid(m.text)
       },
@@ -82,12 +97,12 @@ export function RoomStudentView({ room, token, deps }: { room: string; token: st
   }
 
   const repeat = () => {
-    if (last.current) d.current!.player.play({ ...last.current, word: { ...last.current.word, t: performance.now() } })
+    if (last.current) say(last.current)
     else setSaid('Nothing to repeat yet.')
   }
   const readBoard = () => {
     if (!board.current.length) { setSaid('The board is empty.'); return }
-    d.current!.player.play(asResolution('board', board.current.map(p => ({ phrase: p, x: 0.5 }))))
+    say(asResolution('board', board.current.map(p => ({ phrase: p, x: 0.5 }))))
   }
 
   if (!started) {
