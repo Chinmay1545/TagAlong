@@ -1,4 +1,5 @@
 export const MAX_DIST = 0.06
+export const MATCH_DIST = 0.06 // a re-read term whose centre moved less than this (same LaTeX) is the same term
 export const TIP_WINDOW_MS = 500
 export const TIP_BUFFER_MS = 3000
 export const BOARD_INTERVAL_MS = 3000

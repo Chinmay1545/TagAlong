@@ -173,6 +173,20 @@ describe('board loop: streamed reads', () => {
     h.stop()
   })
 
+  it('a wobbly camera re-read keeps the same term objects (boxes do not jump)', async () => {
+    const h = harness()
+    h.replies.push(fraction)
+    await h.tick()
+    h.cam.scene = 60 // the picture moved a little
+    h.replies.push(fraction.map((t, i) => ({ ...t, id: 9 - i, box: { ...t.box, x: t.box.x + 0.01 } })))
+    await h.tick()
+    expect(h.reads()).toBe(2)
+    const last = h.shown.at(-1)!
+    expect(last).toHaveLength(2)
+    last.forEach((t, i) => expect(t).toBe(h.shown[0][i]))
+    h.stop()
+  })
+
   it('a read that fails half way puts the previous board back', async () => {
     const h = harness()
     h.replies.push(fraction)

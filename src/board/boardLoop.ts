@@ -3,20 +3,11 @@ import type { TipBuffer } from '../core/tipBuffer'
 import { BOARD_INTERVAL_MS, EMPTY_READS_TO_CLEAR, HAND_RECENT_MS } from '../core/config'
 import { frameChanged, toGraySmall } from '../core/frameDiff'
 import { readBoard } from './boardClient'
+import { mergeTerms } from '../core/mergeTerms'
 
 // Strict >: a hand seen exactly HAND_RECENT_MS ago still counts as recent.
 export function shouldReadBoard(now: number, lastTipAt: number | null, changed: boolean): boolean {
   return changed && (lastTipAt === null || now - lastTipAt > HAND_RECENT_MS)
-}
-
-const overlaps = (a: Term['box'], b: Term['box']) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
-
-// While a read streams in: the previous board minus anything a new term covers, plus the new terms so far
-// (ids moved above the old ones so the two sets never clash).
-export function overlay(prev: Term[], received: Term[]): Term[] {
-  const top = prev.reduce((m, t) => Math.max(m, t.id), 0)
-  const kept = prev.filter(p => !received.some(r => overlaps(p.box, r.box)))
-  return [...kept, ...received.map((t, i) => ({ ...t, id: top + i + 1 }))]
 }
 
 export type BoardLoop = { stop(): void; reset(): void }
@@ -52,13 +43,13 @@ export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms
         const terms = await readBoard(blob, term => {
           if (!live()) return
           received.push(term)
-          show(overlay(before, received)) // draw each box as soon as it is read
+          show(mergeTerms(before, received, { dropMissing: false })) // draw each box as soon as it is read
         })
         if (!live()) return
         emptyReads = terms.length ? 0 : emptyReads + 1
         if (emptyReads > 0 && emptyReads < EMPTY_READS_TO_CLEAR) return // lastRead untouched, so the next tick re-reads to confirm
         lastRead = gray
-        show(terms)
+        show(mergeTerms(before, terms, { dropMissing: true })) // same term, same box: no re-drawn boxes on a wobble
       } catch (e) {
         if (!live()) return
         console.warn('board read failed, keeping last terms:', (e as Error).message)
