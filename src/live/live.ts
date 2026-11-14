@@ -1,5 +1,5 @@
-import { resolvePointer, steadiestTip, termAt } from '../core/resolver'
-import { HOLD_MAX_MS, MAX_DIST, TIP_WINDOW_MS } from '../core/config'
+import { readPointer, termAt } from '../core/resolver'
+import { HOLD_MAX_MS, MAX_DIST } from '../core/config'
 import type { TipBuffer } from '../core/tipBuffer'
 import type { Box, Resolution, Term, WordEvent } from '../core/types'
 import type { createWhisperPlayer } from '../audio/whisper'
@@ -47,15 +47,16 @@ export function createLive({ getTerms, tips, player, now = () => performance.now
   return {
     handleItems(items, audioStartPerf) {
       for (const word of detectPointerWords(items, seen, audioStartPerf)) {
-        const r = resolvePointer(word, getTerms(), tips)
-        if (!r.terms.length && SINGLE.has(word.word)) {
-          // No box under the pointer yet. If it points at ink the board read has not drawn yet, hold the
-          // word instead of going silent; checkHeld whispers it when the box arrives.
-          const tip = steadiestTip(tips.lead(word.t - TIP_WINDOW_MS, word.t + TIP_WINDOW_MS), word.t)
+        // The gate runs first: a word said with nothing resting on the board ('not-pointing') is silent
+        // and is never held, so it cannot be whispered late when a box shows up.
+        const { resolution, aim, miss } = readPointer(word, getTerms(), tips)
+        if (miss === 'empty-space' && aim && SINGLE.has(word.word)) {
+          // The pointer rests on a spot with no box. If that spot is ink the board read has not drawn yet,
+          // hold the word instead of going silent; checkHeld whispers it when the box arrives.
           const region = getPendingRegion()
-          if (tip && region && near(tip, region)) { held.push({ word, tip, at: now() }); continue }
+          if (region && near(aim, region)) { held.push({ word, tip: aim, at: now() }); continue }
         }
-        emit(r)
+        emit(resolution)
       }
     },
     checkHeld() {
