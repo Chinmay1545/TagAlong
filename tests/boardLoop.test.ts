@@ -61,7 +61,7 @@ function harness() {
   const loop = startBoardLoop(video, new TipBuffer(), t => shown.push(t))
   // Long enough for a changed picture to settle and be read (one check to see the change, then SETTLE_MS of stillness).
   const tick = () => vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS + SETTLE_MS)
-  return { cam, replies, shown, reads: () => fetchMock.mock.calls.length, tick, stop: loop.stop, reset: loop.reset, fetchMock }
+  return { cam, replies, shown, reads: () => fetchMock.mock.calls.length, tick, stop: loop.stop, reset: loop.reset, pending: loop.pendingRegion, fetchMock }
 }
 
 const fraction: Term[] = [
@@ -281,6 +281,27 @@ describe('board loop: wait for the picture to settle (1.9)', () => {
     expect(h.reads()).toBe(0)
     await vi.advanceTimersByTimeAsync(SETTLE_MS)
     expect(h.reads()).toBe(1)
+    h.stop()
+  })
+})
+
+describe('board loop: pending change region (for 1.5)', () => {
+  it('reports the changed area while it is unread or being read, null once read', async () => {
+    const h = harness()
+    expect(h.pending()).toBeNull() // nothing seen yet
+    let answer!: (v: unknown) => void
+    h.fetchMock.mockImplementationOnce(() => new Promise(r => { answer = r }) as never)
+    await vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS)
+    expect(h.pending()).toEqual({ x: 0, y: 0, w: 1, h: 1 }) // never read: the whole board is pending
+    await vi.advanceTimersByTimeAsync(SETTLE_MS) // read starts
+    expect(h.reads()).toBe(1)
+    expect(h.pending()).toEqual({ x: 0, y: 0, w: 1, h: 1 })
+    answer({ ok: true, json: async () => ({ terms: fraction }) })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(h.pending()).toBeNull()
+    h.cam.scene = 200 // whole picture changes (uniform test frames)
+    await vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS)
+    expect(h.pending()).toEqual({ x: 0, y: 0, w: 1, h: 1 })
     h.stop()
   })
 })

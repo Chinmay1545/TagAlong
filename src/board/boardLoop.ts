@@ -1,7 +1,7 @@
-import type { Term } from '../core/types'
+import type { Box, Term } from '../core/types'
 import type { TipBuffer } from '../core/tipBuffer'
 import { BOARD_INTERVAL_MS, EMPTY_READS_TO_CLEAR, HAND_RECENT_MS, SETTLE_MS } from '../core/config'
-import { frameChanged, toGraySmall } from '../core/frameDiff'
+import { changedRegion, frameChanged, toGraySmall } from '../core/frameDiff'
 import { readBoard } from './boardClient'
 import { mergeTerms } from '../core/mergeTerms'
 
@@ -14,7 +14,11 @@ export function shouldReadBoard(now: number, lastTipAt: number | null, changed: 
 export const isSettled = (stillTicks: number, intervalMs = BOARD_INTERVAL_MS, settleMs = SETTLE_MS): boolean =>
   stillTicks * intervalMs >= settleMs
 
-export type BoardLoop ={ stop(): void; reset(): void }
+// stop/reset as before; pendingRegion: the area that changed since the last good read and is not read yet
+// (or is being read right now), null when the boxes on screen are up to date. Used to hold a "this".
+export type BoardLoop = { stop(): void; reset(): void; pendingRegion(): Box | null }
+
+const FULL: Box = { x: 0, y: 0, w: 1, h: 1 }
 
 export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms: (terms: Term[]) => void): BoardLoop {
   const canvas = document.createElement('canvas')
@@ -26,6 +30,7 @@ export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms
   let current: Term[] = [] // what was last handed to onTerms
   let lastSeen: Uint8Array | null = null // previous check's frame
   let stillTicks = 0 // checks in a row with no change
+  let reading: Box | null = null // changed area of the read in flight
   const show = (terms: Term[]) => { current = terms; onTerms(terms) }
 
   const tick = () => {
@@ -43,6 +48,7 @@ export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms
     const changed = lastRead === null || frameChanged(lastRead, gray)
     if (!shouldReadBoard(performance.now(), tips.lastAt(), changed)) return
     inFlight = true
+    reading = (lastRead && changedRegion(lastRead, gray)) || FULL
     const gen = generation
     const before = current
     const received: Term[] = []
@@ -66,6 +72,7 @@ export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms
         if (received.length) show(before) // undo the half-drawn read
       } finally {
         inFlight = false
+        reading = null
       }
     }, 'image/jpeg', 0.85)
   }
@@ -75,5 +82,6 @@ export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms
     stop: () => { stopped = true; clearInterval(id) },
     // Reset button: clear the boxes now and forget the last frame, so the next tick reads the board from scratch.
     reset: () => { generation++; lastRead = null; emptyReads = 0; show([]) },
+    pendingRegion: () => reading ?? (lastSeen === null ? null : lastRead === null ? FULL : changedRegion(lastRead, lastSeen)),
   }
 }

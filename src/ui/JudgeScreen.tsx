@@ -132,7 +132,7 @@ export function JudgeScreen() {
   const liveRef = useRef<ReturnType<typeof createLive>>(null as never)
   if (!liveRef.current) {
     playerRef.current = createWhisperPlayer()
-    liveRef.current = createLive({ getTerms: () => termsRef.current, tips: tipsRef.current, player: playerRef.current })
+    liveRef.current = createLive({ getTerms: () => termsRef.current, tips: tipsRef.current, player: playerRef.current, getPendingRegion: () => boardLoopRef.current?.pendingRegion() ?? null })
   }
   const latenciesRef = useRef<number[]>([])
   const segRef = useRef(0)
@@ -179,6 +179,7 @@ export function JudgeScreen() {
     boardAtRef.current = performance.now()
     setTermCount(terms.length)
     prepare(terms)
+    liveRef.current.checkHeld() // a "this" said before this box was read can be whispered now
   }
 
   // Startup: camera -> hand tracker -> board loop (or fixture). Cancel-safe.
@@ -218,6 +219,7 @@ export function JudgeScreen() {
 
     const stats = setInterval(() => {
       const now = performance.now()
+      liveRef.current.checkHeld() // gives up on held words that waited too long
       setFps(tipsRef.current.window(now - 1000, now).length)
       const at = boardAtRef.current
       setBoardAgo(fixture ? 'fixture' : at === null ? 'none' : `${((now - at) / 1000).toFixed(0)}s ago`)
