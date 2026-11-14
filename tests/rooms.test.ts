@@ -146,4 +146,21 @@ describe('hub', () => {
     expect(last(t)).toEqual({ type: 'pong', t: 5 })
     expect(last(s)).toEqual({ type: 'pong', t: 9 })
   })
+
+  it('re-joining the same room is a no-op for the teacher', () => {
+    const h = createHub(), t = sock(), s = sock()
+    h.addTeacher(A, 'Math', t); h.addStudent(s, [A])
+    say(h, s, { type: 'join', room: A })
+    const n = t.got.length
+    say(h, s, { type: 'join', room: A })
+    expect(t.got.length).toBe(n)
+  })
+
+  it('a throwing close on a replaced teacher does not break addTeacher', () => {
+    const h = createHub(), old = sock(), fresh = sock(), s = sock()
+    old.close = () => { throw new Error('boom') }
+    h.addTeacher(A, 'Math', old); h.addStudent(s, [A])
+    expect(() => h.addTeacher(A, 'Math', fresh)).not.toThrow()
+    expect(last(s)).toEqual({ type: 'rooms', live: [A], names: { [A]: 'Math' } })
+  })
 })

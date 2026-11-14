@@ -7,6 +7,7 @@ import { bedrockCallModelFromEnv, bedrockCallTextFromEnv, bedrockDescribeFromEnv
 import { shareRouter, shareFromEnv, type Share } from './share'
 import { ttsRouter, pollySynth, type Synth } from './tts'
 import { attachTranscribe } from './transcribe'
+import { attachRooms, roomSecret, roomsRouter } from './roomsServer'
 import { anthropicCallModelFromEnv, anthropicCallTextFromEnv, anthropicDescribeFromEnv, pickProvider } from './anthropic'
 import { notesRouter } from './notes'
 import { describeRouter } from './describe'
@@ -37,6 +38,7 @@ export function createApp(callModel: CallModel, synth?: Synth, callText?: (promp
     if (req.path.startsWith('/api/') && req.path !== '/api/health' && !keyAllowed(access, req.headers.cookie)) return void res.status(401).json({ error: 'access key required' })
     next()
   })
+  app.use(roomsRouter(roomSecret(process.env)))
   app.get('/api/health', (_req, res) => void res.json(healthFrom(process.env, version)))
   app.post('/api/read-board', express.raw({ type: 'image/jpeg', limit: '5mb' }), readBoardHandler(callModel, opts?.streamModel))
   app.use(synth ? ttsRouter(synth) : (_req, res, next) => (_req.path === '/api/tts' ? void res.status(503).json({ error: 'tts not configured' }) : next()))
@@ -71,4 +73,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     console.log(`listening on ${host}:${port} (board reader: ${provider}; BOARD_MODEL_ID set: ${process.env.BOARD_MODEL_ID ? 'yes' : 'no'}; hosts: ${[...access.hosts].join(', ')}; access key: ${access.key ? 'required' : 'off'})`)
   })
   attachTranscribe(server, undefined, access)
+  attachRooms(server, { secret: roomSecret(process.env), access })
 }

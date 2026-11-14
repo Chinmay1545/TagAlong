@@ -3,6 +3,7 @@ import { WebSocketServer } from 'ws'
 import { StartStreamTranscriptionCommand, TranscribeStreamingClient } from '@aws-sdk/client-transcribe-streaming'
 import { PCM_RATE } from '../src/core/config'
 import type { WordItem } from '../src/speech/words'
+import { serveUpgrade } from './upgrade'
 import { LOCAL_ACCESS, hostAllowed, keyAllowed, originAllowed, type Access } from './access'
 
 type Ev = { items: WordItem[]; final?: { text: string; t0: number; t1: number } }
@@ -51,8 +52,9 @@ const MAX_QUEUE_BYTES = 160000 // ~5 s (tolerates a slow Transcribe start-up) of
 export { originAllowed }
 
 export function attachTranscribe(server: http.Server, makeStream: (audio: AsyncIterable<Uint8Array>) => AsyncIterable<unknown> = transcribeStream, access: Access = LOCAL_ACCESS): void {
-  const wss = new WebSocketServer({ server, path: '/ws/transcribe', maxPayload: 64 * 1024, verifyClient: ({ origin, req }: { origin: string; req: { headers: { host?: string; cookie?: string } } }) =>
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024, verifyClient: ({ origin, req }: { origin: string; req: { headers: { host?: string; cookie?: string } } }) =>
     originAllowed(origin, access) && hostAllowed(access, req.headers.host) && keyAllowed(access, req.headers.cookie) })
+  serveUpgrade(server, '/ws/transcribe', wss)
   wss.on('connection', (ws) => {
     let queue: Uint8Array[] = []
     let queued = 0

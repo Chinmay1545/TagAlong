@@ -50,7 +50,7 @@ export function createHub(opts: { rateMax?: number; rateWindowMs?: number; now?:
     addTeacher(room, name, s) {
       const old = teachers.get(room)
       teachers.set(room, { name, s }) // set first so old's late close event cannot evict the new one
-      if (old && old.s !== s) old.s.close()
+      if (old && old.s !== s) try { old.s.close() } catch { /* already dead */ }
       tellStudents(room)
       tellTeacher(room)
     },
@@ -90,6 +90,7 @@ export function createHub(opts: { rateMax?: number; rateWindowMs?: number; now?:
       if (m.type === 'join') {
         if (typeof m.room !== 'string' || !st.rooms.includes(m.room)) return
         const prev = st.joined
+        if (prev === m.room) return
         st.joined = m.room
         if (prev && prev !== m.room) tellTeacher(prev)
         tellTeacher(m.room)
