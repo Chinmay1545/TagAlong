@@ -1,6 +1,6 @@
 import type { Term } from '../core/types'
 import type { TipBuffer } from '../core/tipBuffer'
-import { BOARD_INTERVAL_MS, EMPTY_READS_TO_CLEAR, HAND_RECENT_MS } from '../core/config'
+import { BOARD_INTERVAL_MS, EMPTY_READS_TO_CLEAR, HAND_RECENT_MS, SETTLE_MS } from '../core/config'
 import { frameChanged, toGraySmall } from '../core/frameDiff'
 import { readBoard } from './boardClient'
 import { mergeTerms } from '../core/mergeTerms'
@@ -10,7 +10,11 @@ export function shouldReadBoard(now: number, lastTipAt: number | null, changed: 
   return changed && (lastTipAt === null || now - lastTipAt > HAND_RECENT_MS)
 }
 
-export type BoardLoop = { stop(): void; reset(): void }
+// Counted in checks (not wall time) so it is exact under any clock: still for at least SETTLE_MS.
+export const isSettled = (stillTicks: number, intervalMs = BOARD_INTERVAL_MS, settleMs = SETTLE_MS): boolean =>
+  stillTicks * intervalMs >= settleMs
+
+export type BoardLoop ={ stop(): void; reset(): void }
 
 export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms: (terms: Term[]) => void): BoardLoop {
   const canvas = document.createElement('canvas')
@@ -20,6 +24,8 @@ export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms
   let emptyReads = 0
   let generation = 0 // bumped by reset: a read started before it is ignored
   let current: Term[] = [] // what was last handed to onTerms
+  let lastSeen: Uint8Array | null = null // previous check's frame
+  let stillTicks = 0 // checks in a row with no change
   const show = (terms: Term[]) => { current = terms; onTerms(terms) }
 
   const tick = () => {
@@ -30,6 +36,10 @@ export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms
     const ctx = canvas.getContext('2d', { willReadFrequently: true })!
     ctx.drawImage(video, 0, 0, w, h)
     const gray = toGraySmall(ctx.getImageData(0, 0, w, h).data, w, h)
+    // Settle: count checks the picture has stayed still, so a read never starts mid-stroke or on a moving camera.
+    stillTicks = lastSeen !== null && !frameChanged(lastSeen, gray) ? stillTicks + 1 : 0
+    lastSeen = gray
+    if (!isSettled(stillTicks)) return
     const changed = lastRead === null || frameChanged(lastRead, gray)
     if (!shouldReadBoard(performance.now(), tips.lastAt(), changed)) return
     inFlight = true

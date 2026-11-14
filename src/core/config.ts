@@ -4,6 +4,7 @@ export const TIP_WINDOW_MS = 500
 export const TIP_BUFFER_MS = 3000
 export const BOARD_INTERVAL_MS = 1000 // how often the board is checked for changes (cheap 64x36 diff; a read only starts when it changed)
 export const HAND_RECENT_MS = 300
+export const SETTLE_MS = 1000 // a changed picture must stay still this long before it is read (pen lifted, camera steady)
 export const EMPTY_READS_TO_CLEAR = 2 // one empty read may be a person in front of the board; two in a row means it was erased
 export const FRAME_DIFF_THRESHOLD = 8
 export const POINTER_WORDS = ['this', 'that', 'here', 'these', 'those'] as const

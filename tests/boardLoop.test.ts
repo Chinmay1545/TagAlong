@@ -3,7 +3,7 @@ import { shouldReadBoard, startBoardLoop } from '../src/board/boardLoop'
 import { isFixtureMode, loadFixture, readBoard } from '../src/board/boardClient'
 import { TipBuffer } from '../src/core/tipBuffer'
 import type { Term } from '../src/core/types'
-import { BOARD_INTERVAL_MS } from '../src/core/config'
+import { BOARD_INTERVAL_MS, SETTLE_MS } from '../src/core/config'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -59,7 +59,8 @@ function harness() {
   const shown: Term[][] = []
   vi.useFakeTimers()
   const loop = startBoardLoop(video, new TipBuffer(), t => shown.push(t))
-  const tick = () => vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS) // one board check
+  // Long enough for a changed picture to settle and be read (one check to see the change, then SETTLE_MS of stillness).
+  const tick = () => vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS + SETTLE_MS)
   return { cam, replies, shown, reads: () => fetchMock.mock.calls.length, tick, stop: loop.stop, reset: loop.reset, fetchMock }
 }
 
@@ -222,13 +223,13 @@ describe('board loop: streamed reads', () => {
 describe('board loop: 1 s checks (1.4)', () => {
   it('checks the board every second', () => expect(BOARD_INTERVAL_MS).toBe(1000))
 
-  it('a change is picked up by the next check, about a second later', async () => {
+  it('a change is picked up by the next check and read once it settles', async () => {
     const h = harness()
     h.replies.push(fraction)
     await h.tick()
     expect(h.reads()).toBe(1)
     h.cam.scene = 120
-    await vi.advanceTimersByTimeAsync(1000)
+    await vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS + SETTLE_MS) // seen on the next check, read once it has settled (1.9)
     expect(h.reads()).toBe(2)
     h.stop()
   })
@@ -244,6 +245,42 @@ describe('board loop: 1 s checks (1.4)', () => {
     await vi.advanceTimersByTimeAsync(0)
     await h.tick()
     expect(h.reads()).toBe(2) // the next check reads again once the first is done
+    h.stop()
+  })
+})
+
+describe('board loop: wait for the picture to settle (1.9)', () => {
+  it('waits about a second of stillness after a change', () => expect(SETTLE_MS).toBe(1000))
+
+  it('does not read while the picture keeps changing (teacher still writing)', async () => {
+    const h = harness()
+    for (let i = 0; i < 6; i++) { h.cam.scene = 40 + i * 20; await vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS) }
+    expect(h.reads()).toBe(0)
+    h.replies.push(fraction)
+    await vi.advanceTimersByTimeAsync(SETTLE_MS) // still for SETTLE_MS
+    expect(h.reads()).toBe(1)
+    expect(h.shown).toEqual([fraction])
+    h.stop()
+  })
+
+  it('a picture that moves and comes back to what was read is not read again', async () => {
+    const h = harness()
+    h.replies.push(fraction)
+    await h.tick()
+    h.cam.scene = 200 // someone walks past
+    await vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS)
+    h.cam.scene = 50 // gone again, board unchanged
+    await vi.advanceTimersByTimeAsync(3 * BOARD_INTERVAL_MS)
+    expect(h.reads()).toBe(1)
+    h.stop()
+  })
+
+  it('the first read of a still board starts one second in', async () => {
+    const h = harness()
+    await vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS)
+    expect(h.reads()).toBe(0)
+    await vi.advanceTimersByTimeAsync(SETTLE_MS)
+    expect(h.reads()).toBe(1)
     h.stop()
   })
 })
