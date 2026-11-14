@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import http from 'node:http'
 import { WebSocket } from 'ws'
-import { createRoomHub, roomToken } from '../server/rooms'
+import { createRoomHub, roomToken, CAMERA_GRACE_MS } from '../server/rooms'
 import { COOKIE, type Access } from '../server/access'
 
 // Real HTTP server + real WebSocket clients: one camera device, several student phones.
@@ -16,9 +16,9 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map(s => new Promise(r => { s.closeAllConnections(); s.close(r) })))
 })
 
-async function start(opts: { access?: Access; maxStudents?: number } = {}) {
+async function start(opts: { access?: Access; maxStudents?: number; graceMs?: number } = {}) {
   const server = http.createServer()
-  const hub = createRoomHub({ access: opts.access ?? hosted, maxStudents: opts.maxStudents })
+  const hub = createRoomHub({ access: opts.access ?? hosted, maxStudents: opts.maxStudents, graceMs: opts.graceMs })
   hub.attach(server)
   hubs.push(hub)
   servers.push(server)
@@ -51,13 +51,61 @@ describe('room tokens', () => {
 
 describe('room hub', () => {
   it('a student in an empty room hears "not live", then "live" when the camera joins, and "not live" when it leaves', async () => {
-    const { camera, student } = await start()
+    const { camera, student } = await start({ graceMs: 40 })
     const s = await student()
     expect(await s.next()).toEqual({ type: 'status', live: false })
     const c = await camera()
     expect(await s.next()).toEqual({ type: 'status', live: true })
     c.ws.close()
     expect(await s.next()).toEqual({ type: 'status', live: false })
+  })
+
+  it('waits 10 s by default before a dropped camera ends the class', () => {
+    expect(CAMERA_GRACE_MS).toBe(10_000)
+  })
+
+  it('a camera that drops and returns within the grace period is never missed: students hear nothing', async () => {
+    const { camera, student, hub } = await start({ graceMs: 200 })
+    const c = await camera()
+    const s = await student()
+    expect(await s.next()).toEqual({ type: 'status', live: true })
+    c.ws.close()
+    await settle()
+    expect(hub.isLive('math201')).toBe(true) // phones keep the class during the grace period
+    await camera()
+    await new Promise(r => setTimeout(r, 300))
+    expect(s.msgs.filter(m => (m as { type: string }).type === 'status')).toEqual([])
+    expect(hub.isLive('math201')).toBe(true)
+  })
+
+  it('a camera gone longer than the grace period tells students not live', async () => {
+    const { camera, student, hub } = await start({ graceMs: 60 })
+    const c = await camera()
+    const s = await student()
+    expect(await s.next()).toEqual({ type: 'status', live: true })
+    c.ws.close()
+    expect(await s.next()).toEqual({ type: 'status', live: false })
+    expect(hub.isLive('math201')).toBe(false)
+  })
+
+  it('closing the class ends it at once even with a long grace period, and then a drop is not delayed', async () => {
+    const { camera, student, hub } = await start({ graceMs: 60_000 })
+    const c = await camera()
+    const s = await student()
+    expect(await s.next()).toEqual({ type: 'status', live: true })
+    c.ws.send(JSON.stringify({ type: 'status', open: false }))
+    expect(await s.next()).toEqual({ type: 'status', live: false })
+    expect(hub.isLive('math201')).toBe(false)
+  })
+
+  it('the room survives its grace period when nobody else is in it, and hub.close() clears the timer', async () => {
+    const { camera, hub } = await start({ graceMs: 60_000 })
+    const c = await camera()
+    c.ws.close()
+    await settle()
+    expect(hub.isLive('math201')).toBe(true)
+    hub.close()
+    expect(hub.isLive('math201')).toBe(false)
   })
 
   it('relays a whisper from the camera to every student in the room, not to other rooms', async () => {

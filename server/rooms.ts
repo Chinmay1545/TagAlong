@@ -16,19 +16,20 @@ const LOCAL_SECRET = 'tagalong-local-only' // no ACCESS_KEY (local dev): links s
 const MAX_STUDENTS = 50
 const MAX_PAYLOAD = 16 * 1024
 const RECENT_PHRASES = 500 // phrases a student may fetch audio for, per room
+export const CAMERA_GRACE_MS = 10_000 // a dropped camera (Wi-Fi blip) has this long to come back before students are told the class ended
 const PING_MS = 25_000 // keeps proxies from closing idle sockets and finds dead phones
 
 export const roomToken = (secret: string, room: string) =>
   createHmac('sha256', secret).update(`room:${room}`).digest('base64url').slice(0, 24)
 
-type Room = { camera: WebSocket | null; open: boolean; students: Set<WebSocket>; board: string[] | null; phrases: Set<string> }
+type Room = { camera: WebSocket | null; open: boolean; students: Set<WebSocket>; board: string[] | null; phrases: Set<string>; grace?: NodeJS.Timeout }
 
 function reject(socket: Duplex, status: number, text: string) {
   socket.write(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`)
   socket.destroy()
 }
 
-export function createRoomHub({ access = LOCAL_ACCESS, maxStudents = MAX_STUDENTS }: { access?: Access; maxStudents?: number } = {}) {
+export function createRoomHub({ access = LOCAL_ACCESS, maxStudents = MAX_STUDENTS, graceMs = CAMERA_GRACE_MS }: { access?: Access; maxStudents?: number; graceMs?: number } = {}) {
   const secret = access.key ?? LOCAL_SECRET
   const rooms = new Map<string, Room>()
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD })
@@ -45,7 +46,7 @@ export function createRoomHub({ access = LOCAL_ACCESS, maxStudents = MAX_STUDENT
     if (!r) rooms.set(name, (r = { camera: null, open: false, students: new Set(), board: null, phrases: new Set() }))
     return r
   }
-  const live = (r: Room) => r.camera !== null && r.open
+  const live = (r: Room) => r.open && (r.camera !== null || !!r.grace) // a camera inside its grace period still counts
   const send = (ws: WebSocket, m: ServerToStudent | ServerToCamera) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(m)) }
   const toStudents = (r: Room, m: ServerToStudent) => { for (const s of r.students) send(s, m) }
   const listeners = (r: Room) => { if (r.camera) send(r.camera, { type: 'listeners', count: r.students.size }) }
@@ -55,14 +56,15 @@ export function createRoomHub({ access = LOCAL_ACCESS, maxStudents = MAX_STUDENT
     r.phrases.add(p) // newest last
     if (r.phrases.size > RECENT_PHRASES) r.phrases.delete(r.phrases.values().next().value!)
   }
-  const forget = (name: string, r: Room) => { if (!r.camera && r.students.size === 0) rooms.delete(name) }
+  const forget = (name: string, r: Room) => { if (!r.camera && !r.grace && r.students.size === 0) rooms.delete(name) }
 
   function onCamera(ws: WebSocket, name: string) {
     const r = roomOf(name)
     if (r.camera) r.camera.close(4000, 'replaced by another camera device')
     r.camera = ws
     r.open = true
-    toStudents(r, { type: 'status', live: true })
+    if (r.grace) { clearTimeout(r.grace); r.grace = undefined } // back in time: students never saw it leave
+    else toStudents(r, { type: 'status', live: true })
     listeners(r)
     ws.on('message', data => {
       if (r.camera !== ws) return
@@ -79,8 +81,8 @@ export function createRoomHub({ access = LOCAL_ACCESS, maxStudents = MAX_STUDENT
     ws.on('close', () => {
       if (r.camera !== ws) return // replaced: the new camera already took over
       r.camera = null
-      toStudents(r, { type: 'status', live: false })
-      forget(name, r)
+      if (!r.open) { toStudents(r, { type: 'status', live: false }); return forget(name, r) }
+      r.grace = setTimeout(() => { r.grace = undefined; toStudents(r, { type: 'status', live: false }); forget(name, r) }, graceMs)
     })
   }
 
@@ -128,7 +130,8 @@ export function createRoomHub({ access = LOCAL_ACCESS, maxStudents = MAX_STUDENT
     // Only phrases the camera published in that room may be voiced for a student of that room.
     allowsPhrase: (room: string, text: string) => rooms.get(room)?.phrases.has(text.trim().slice(0, MAX_PHRASE)) ?? false,
     attach(server: http.Server) { server.on('upgrade', handleUpgrade) },
-    close() { clearInterval(ping); for (const ws of wss.clients) ws.terminate(); wss.close() },
+    isLive: (room: string) => { const r = rooms.get(room); return !!r && live(r) },
+    close() { clearInterval(ping); for (const r of rooms.values()) clearTimeout(r.grace); rooms.clear(); for (const ws of wss.clients) ws.terminate(); wss.close() },
   }
 }
 
