@@ -234,6 +234,7 @@ export function JudgeScreen() {
           termsRef.current = terms
           setTermCount(terms.length)
           prepare(terms)
+          classRef.current.board(terms) // student phones get the saved board too
         } catch (e) {
           if (!cancelled) setCamError((e as Error).message)
         }

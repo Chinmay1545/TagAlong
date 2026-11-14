@@ -68,6 +68,15 @@ URL options:
 - Without these (live mode) the stage shows the camera and only boxes read from it.
 - `?mirror=1` mirrors the camera preview (off by default, because the camera faces the board).
 
+## Classroom: one camera, many student phones
+
+1. On the camera device (laptop or phone on a tripod, facing the board), type the course name (`a-z`, `0-9`, `-`, for example `math201`) and press **Open class**. This device goes quiet; the whispers go to the students.
+2. Give each student the **student link** (Copy link). It never changes for that course, so it can be saved to the Home Screen once. Changing `ACCESS_KEY` revokes every link.
+3. The student opens the link and taps **Start listening** once (phones block sound until a tap). Whispers play on their phone, left or right by where the term is on the board. **Repeat** and **What's on the board?** work on the phone; nothing is sent back to the teacher.
+4. The camera shows how many are listening. **Close class** tells the students it ended.
+
+The server only relays text (`/ws/room`); each phrase is voiced once by `/api/tts` and cached, so ten students cost one voice request. A student's room token opens the voice for phrases published in that room and nothing else. Plain `/?student` is still the same-device student tab.
+
 ## Keyboard
 
 | Key | Action |
