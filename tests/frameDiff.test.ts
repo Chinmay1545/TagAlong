@@ -74,3 +74,30 @@ describe('hideCells (laser dot masking)', () => {
     expect(Array.from(hideCells(now, base(), []))).toEqual(Array.from(now))
   })
 })
+
+// The board loop must see a few small words on a big board ("x = 5" and "x = 6" cover ~10 of 2304 cells).
+describe('frameChanged: small writing counts as a change', () => {
+  const withInk = (cells: number[]) => { const g = base(); for (const i of cells) g[i] = Math.max(0, g[i] - 100); return g }
+
+  it('a few cells of new ink on an unchanged board -> true', () =>
+    expect(frameChanged(base(), withInk([10 * 64 + 8, 10 * 64 + 9, 11 * 64 + 8, 10 * 64 + 50, 10 * 64 + 51, 11 * 64 + 51]))).toBe(true))
+
+  it('one or two odd cells (sensor noise, a speck) -> false', () =>
+    expect(frameChanged(base(), withInk([5 * 64 + 5, 30 * 64 + 60]))).toBe(false))
+
+  it('a uniform brightness shift with no ink (camera exposure) is not counted as ink', () => {
+    const shifted = base().map(v => v + 6) // below the old whole-frame threshold too
+    expect(frameChanged(base(), shifted)).toBe(false)
+  })
+})
+
+describe('toGraySmall: thin strokes are not missed', () => {
+  it('a 1-pixel marker line between sample points still darkens its cell', () => {
+    const w = 640, h = 360 // 10x10 pixels per cell
+    const rgba = new Uint8ClampedArray(w * h * 4).fill(220)
+    for (let y = 0; y < h; y++) rgba.set([20, 20, 20, 255], (y * w + 2) * 4) // vertical line at x=2, inside cell 0
+    const g = toGraySmall(rgba, w, h)
+    expect(g[0]).toBeLessThan(215)  // the cell sees the ink
+    expect(g[5]).toBeGreaterThan(215) // a clean cell does not
+  })
+})
