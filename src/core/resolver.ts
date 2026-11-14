@@ -1,4 +1,5 @@
-import { DWELL_MS, DWELL_RADIUS, MAX_DIST, NEST_SNAP, TIP_WINDOW_MS } from './config'
+import { DWELL_MS, DWELL_RADIUS, MAX_DIST, NEST_SNAP, TIE_DIST, TIP_WINDOW_MS } from './config'
+import { groupFor, groupKind, scopeFrom } from './scope'
 import type { TipBuffer } from './tipBuffer'
 import type { Box, Resolution, Term, TipSample, WordEvent } from './types'
 
@@ -14,9 +15,10 @@ export function boxDistance(box: Box, x: number, y: number): number {
 
 // The term the point is on. Inside more than one box (a bracket group and a term in it): the smallest box wins,
 // so pointing at y inside (2x+y) gives y. Inside none: the nearest box within maxDist. Ties go to the lowest id.
+// tie > 0 (the pointing path): outside every box, an unrelated box almost as near means silent (see TIE_DIST).
 // Near miss: a pointer inside a group box and within `snap` of a smaller term that sits in that group means
 // the smaller term (a fingertip is not tracked more exactly than that). Pass snap = 0 for the plain rule.
-export function termAt(terms: Term[], x: number, y: number, maxDist = MAX_DIST, snap = NEST_SNAP): Term | null {
+export function termAt(terms: Term[], x: number, y: number, maxDist = MAX_DIST, snap = NEST_SNAP, tie = 0): Term | null {
   let best: Term | null = null
   let bestD = Infinity
   let bestArea = Infinity
@@ -36,7 +38,18 @@ export function termAt(terms: Term[], x: number, y: number, maxDist = MAX_DIST, 
       bestArea = area
     }
   }
-  if (!best || bestD > EPS) return best
+  if (!best) return best
+  if (bestD > EPS) {
+    if (tie <= 0) return best
+    // Outside every box: if an unrelated box is about as near, the aim could be either, so say nothing.
+    const holds = (a: Term, b: Term) => boxDistance(a.box, b.box.x, b.box.y) <= EPS && boxDistance(a.box, b.box.x + b.box.w, b.box.y + b.box.h) <= EPS
+    for (const term of terms) {
+      if (term === best || holds(term, best) || holds(best, term)) continue
+      const d = boxDistance(term.box, x, y)
+      if (d <= maxDist && d - bestD < tie) return null
+    }
+    return best
+  }
   // The pointer is inside `best`. Look for a smaller term inside it that the pointer only just misses.
   const reach = Math.min(snap, maxDist)
   let pick: Term | null = null
@@ -87,7 +100,7 @@ export function termsAlongPath(
   const out: Term[] = []
   for (const p of track) {
     if (p.t < t0 || p.t > t1) continue
-    const term = termAt(terms, p.x, p.y, maxDist)
+    const term = termAt(terms, p.x, p.y, maxDist, NEST_SNAP, 0)
     if (term && !out.includes(term)) out.push(term)
   }
   return out
@@ -149,13 +162,30 @@ export function dwellRead(
 // Only the second can be "ink not read yet" (live.ts holds it); the first must stay silent.
 export type PointerMiss = 'not-pointing' | 'empty-space'
 // landing: the answer comes from an older rest while the pointer is just settling somewhere new (see dwellRead).
-export type PointerRead = { resolution: Resolution; aim: { x: number; y: number } | null; miss: PointerMiss | null; landing: boolean }
+export type PointerRead = { resolution: Resolution; aim: { x: number; y: number } | null; miss: PointerMiss | null; landing: boolean; sweep?: Term }
 
 // when: the moment to look at and how far either side of it. By default the word's own time and
 // TIP_WINDOW_MS; live.ts looks earlier and wider for words that arrive late (browser speech).
 export type When = { at: number; windowMs: number }
 
-export function readPointer(word: WordEvent, terms: Term[], tips: TipBuffer, when?: When): PointerRead {
+// "this" with no rest: the pointer passed over 2+ single terms (really under it) around the word AND a scope
+// word chose a group there ("this top part"). Without a scope word a passing hand stays silent.
+export function sweepGroup(terms: Term[], tips: TipBuffer, t: number, scope: string | null): Term | null {
+  if (!scope) return null
+  const singles = terms.filter(x => !groupKind(x.phrase))
+  const hit: Term[] = []
+  for (const p of tips.lead(t - 1000, t + 600)) {
+    const x = termAt(singles, p.x, p.y, 0, 0, 0)
+    if (x && !hit.includes(x)) hit.push(x)
+  }
+  if (hit.length < 2) return null
+  const x0 = Math.min(...hit.map(h => h.box.x)), x1 = Math.max(...hit.map(h => h.box.x + h.box.w))
+  const y0 = Math.min(...hit.map(h => h.box.y)), y1 = Math.max(...hit.map(h => h.box.y + h.box.h))
+  return groupFor(terms, { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }, scope)
+}
+
+// after: the words said after the pointer word in its utterance (scope words such as "top" pick a group).
+export function readPointer(word: WordEvent, terms: Term[], tips: TipBuffer, when?: When, after: string[] = []): PointerRead {
   const none = (miss: PointerMiss, aim: PointerRead['aim'] = null): PointerRead => ({ resolution: { word, terms: [] }, aim, miss, landing: false })
   if (!word.isPointer) return none('not-pointing')
   const t = when?.at ?? word.t
@@ -170,8 +200,12 @@ export function readPointer(word: WordEvent, terms: Term[], tips: TipBuffer, whe
   // this / that / here: whisper only if the pointer (of any kind) rested on one spot around the word.
   // The pointer that counts is the one seen around the word itself (a laser put away a moment ago does not).
   const { aim, landing } = dwellRead(tips.leadAt(t, windowMs), t, windowMs)
-  if (!aim) return none('not-pointing')
-  const term = termAt(terms, aim.x, aim.y)
+  const scope = scopeFrom(after)
+  if (!aim) {
+    const sweep = sweepGroup(terms, tips, t, scope)
+    return sweep ? { ...none('not-pointing'), sweep } : none('not-pointing')
+  }
+  const term = (scope && groupFor(terms, aim, scope)) || termAt(terms, aim.x, aim.y, MAX_DIST, NEST_SNAP, TIE_DIST)
   return term ? { resolution: { word, terms: [term] }, aim, miss: null, landing } : { ...none('empty-space', aim), landing }
 }
 
