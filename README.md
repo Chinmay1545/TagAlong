@@ -29,6 +29,8 @@ cp .env.example .env    # then fill in the values you have
 | `NOTES_BUCKET` | Optional existing S3 bucket. Enables the "Copy share link" button (24 hour link, `notes/<uuid>.txt`) |
 | `ANTHROPIC_API_KEY` | Optional. If set, the board is read through the Anthropic API instead of Bedrock, and notes are enabled |
 | `ANTHROPIC_MODEL_ID` | Optional model override for board reads |
+| `ANTHROPIC_BOARD_EFFORT` | Optional thinking effort for board reads: `low` (default, fastest), `medium`, `high`, `xhigh`, `max` |
+| `ANTHROPIC_BOARD_SPEED` | Optional `fast` (default: fast mode, about 2x the price per token, much quicker first box) or `standard`. A rate-limited fast read retries once at standard speed |
 | `ANTHROPIC_NOTES_MODEL_ID` | Optional model override for notes |
 | `POLLY_VOICE`, `POLLY_ENGINE` | Optional Polly voice and engine (`generative` or `neural`) |
 
