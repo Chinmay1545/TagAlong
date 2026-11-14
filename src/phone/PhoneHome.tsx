@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createWhisperPlayer } from '../audio/whisper'
 import { RoomStudentView, roomTts } from '../ui/RoomStudentView'
 import { createEarcons } from './earcons'
+import { unlockVoice } from './voice'
 import { loadClasses, type SavedClass } from './classes'
 import '../ui/student.css'
 
@@ -15,7 +16,8 @@ type Deps = {
   pollMs: number
   player: NonNullable<RoomDeps['player']>
   earcons: NonNullable<RoomDeps['earcons']>
-  room: Omit<RoomDeps, 'player' | 'earcons'>
+  unlockVoice: () => void
+  room: Omit<RoomDeps, 'player' | 'earcons' | 'unlockVoice'>
 }
 
 const POLL_MS = 5000
@@ -68,6 +70,7 @@ export function PhoneHome({ deps }: { deps?: Partial<Deps> }) {
   const begin = () => {
     player.current.unlock()
     earcons.current.unlock()
+    ;(deps?.unlockVoice ?? unlockVoice)()
     void check(true)
   }
 

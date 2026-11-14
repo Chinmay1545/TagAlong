@@ -183,6 +183,13 @@ describe('connection earcons', () => {
     expect(t.earcons.unlock).toHaveBeenCalledTimes(1)
     expect(kinds(t.earcons)).toEqual([])
   })
+  it('unlocks the phone voice inside the Start press, before anything is whispered', () => {
+    const unlockVoice = vi.fn()
+    const t = withEarcons({ unlockVoice })
+    expect(unlockVoice).not.toHaveBeenCalled()
+    t.start()
+    expect(unlockVoice).toHaveBeenCalledTimes(1)
+  })
   it('joined: one tone when the class is live on arrival', async () => {
     const t = withEarcons(); t.start()
     await t.recv({ type: 'status', live: true })

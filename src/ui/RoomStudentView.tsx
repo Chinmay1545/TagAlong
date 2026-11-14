@@ -3,6 +3,7 @@ import type { Resolution, Term, WordEvent } from '../core/types'
 import { createWhisperPlayer } from '../audio/whisper'
 import { keepScreenAwake } from '../vision/wakeLock'
 import { createEarcons } from '../phone/earcons'
+import { unlockVoice } from '../phone/voice'
 import { connectRoom, roomSocketUrl, type RoomState } from '../live/roomClient'
 import type { ServerToStudent, WhisperItem } from '../live/roomProtocol'
 import './student.css'
@@ -29,6 +30,7 @@ type Deps = {
   connect: (url: string, on: { onMessage(m: unknown): void; onState?(s: RoomState): void }) => { close(): void }
   player: Player
   earcons: ReturnType<typeof createEarcons>
+  unlockVoice: () => void
   keepAwake: () => () => void
   location: { protocol: string; host: string }
   voiceWaitMs: number
@@ -50,6 +52,7 @@ export function RoomStudentView({ room, token, deps, autoStart, startedText }: {
     connect: deps?.connect ?? ((url, on) => connectRoom(url, on)),
     player: deps?.player ?? createWhisperPlayer({ fetchTts: roomTts(room, token) }),
     earcons: deps?.earcons ?? createEarcons(),
+    unlockVoice: deps?.unlockVoice ?? (() => unlockVoice()),
     keepAwake: deps?.keepAwake ?? keepScreenAwake,
     location: deps?.location ?? window.location,
     voiceWaitMs: deps?.voiceWaitMs ?? VOICE_WAIT_MS,
@@ -82,8 +85,8 @@ export function RoomStudentView({ room, token, deps, autoStart, startedText }: {
 
   const start = () => {
     const { player, connect, keepAwake, location, earcons } = d.current!
-    player.unlock()
-    earcons.unlock()
+    // With autoStart the phone home took the press and unlocked everything already.
+    if (!autoStart) { player.unlock(); earcons.unlock(); d.current!.unlockVoice() }
     const release = keepAwake()
     setStarted(true)
     setSaid(startedText ?? `Joining ${room}.`)
