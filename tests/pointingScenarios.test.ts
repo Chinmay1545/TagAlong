@@ -18,7 +18,7 @@ function scene(points: AnyPoint[], opts: { terms?: Term[]; pending?: Box | null;
   const tips = new TipBuffer(opts.bufferMs)
   inOrder(points).forEach(p => tips.push(p))
   const play = vi.fn((_r: Resolution) => (enabled ? { startedAt: clock + 10 } : null))
-  const live = createLive({ getTerms: () => terms, tips, player: { play, setEnabled: on => { enabled = on } }, now: () => clock, getPendingRegion: () => region })
+  const live = createLive({ getTerms: () => terms, tips, player: { play, setEnabled: on => { enabled = on } }, now: () => clock, getPendingRegion: () => region, later: fn => fn() }) // later: the short recheck wait (tests/lateWords.test.ts) is over at once
   const got: { word: string; terms: string[]; whispered: boolean }[] = []
   live.onResolution((r, ms) => got.push({ word: r.word.word, terms: r.terms.map(t => t.phrase), whispered: ms !== null }))
   return {

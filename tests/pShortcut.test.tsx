@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { fireEvent } from '@testing-library/react'
 import { FIXTURE, mountJudge, unmountJudge } from './helpers/judgeHarness'
+import { RECHECK_MS } from '../src/core/config'
 
 afterEach(unmountJudge)
 
@@ -24,9 +25,11 @@ describe('P key: backup for "this" when the mic fails', () => {
     await j.key('P')
     expect(j.fakes.play.mock.calls[0][0].terms).toEqual([FIXTURE[2]])
   })
-  it('with nothing pointing, P is silent', async () => {
+  it('with nothing pointing, P is silent (after a short wait in case the pointer is just arriving)', async () => {
     const j = await mountJudge('?demo=1')
     await j.key('p')
+    expect(j.log()).toEqual([]) // waiting to look once more
+    await j.wait(RECHECK_MS + 100)
     expect(j.fakes.play).not.toHaveBeenCalled()
     expect(j.log()).toEqual(['this → silent'])
   })
@@ -44,7 +47,19 @@ describe('P key: backup for "this" when the mic fails', () => {
     j.mouseAway()
     await j.wait(700)
     await j.key('p')
+    await j.wait(RECHECK_MS + 100)
     expect(j.log()).toEqual(['this → silent'])
+  })
+  it('P pressed just as the mouse lands on a term is whispered a moment later', async () => {
+    const j = await mountJudge('?demo=1')
+    j.mouseTo(0.9, 0.9)
+    await j.wait(60)
+    j.mouseTo(0.25, 0.27) // lands on the term
+    await j.wait(40)
+    await j.key('p') // only ~40 ms of rest so far
+    expect(j.log()).toEqual([])
+    await j.wait(RECHECK_MS + 100)
+    expect(j.log()[0]).toMatch(/^this → the 2x on top left · \d/)
   })
   it('each press is one event; holding the key down does not repeat', async () => {
     const j = await mountJudge('?demo=1')

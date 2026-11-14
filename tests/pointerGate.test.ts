@@ -115,13 +115,13 @@ describe('live: a word the gate rejects is silent and never held', () => {
     let clock = 1000
     let terms: Term[] = [A]
     const play = vi.fn((_r: Resolution) => ({ startedAt: clock + 10 }))
-    const live = createLive({ getTerms: () => terms, tips: fill(points), player: { play, setEnabled: () => {} }, now: () => clock, getPendingRegion: () => changed })
+    const live = createLive({ getTerms: () => terms, tips: fill(points), player: { play, setEnabled: () => {} }, now: () => clock, getPendingRegion: () => changed, later: fn => fn() }) // later: the short recheck wait is over at once
     const got: Resolution[] = []
     live.onResolution(r => got.push(r))
     return { live, play, got, advance: (ms: number) => { clock += ms }, setTerms: (t: Term[]) => { terms = t } }
   }
 
-  it('a hand moving through the new ink while "that" is said: silent at once, and no late whisper', () => {
+  it('a hand moving through the new ink while "that" is said: silent (after the short recheck), and no late whisper', () => {
     const s = setup(sweep(0.15, 1.15, 0.65)) // on the new ink at t=1000, but never stops
     s.live.handleItems(say('that', 1000), null)
     expect(s.got.map(r => r.terms)).toEqual([[]])

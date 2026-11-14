@@ -133,10 +133,15 @@ export function dwellPoint(
 export type PointerMiss = 'not-pointing' | 'empty-space'
 export type PointerRead = { resolution: Resolution; aim: { x: number; y: number } | null; miss: PointerMiss | null }
 
-export function readPointer(word: WordEvent, terms: Term[], tips: TipBuffer): PointerRead {
+// when: the moment to look at and how far either side of it. By default the word's own time and
+// TIP_WINDOW_MS; live.ts looks earlier and wider for words that arrive late (browser speech).
+export type When = { at: number; windowMs: number }
+
+export function readPointer(word: WordEvent, terms: Term[], tips: TipBuffer, when?: When): PointerRead {
   const none = (miss: PointerMiss, aim: PointerRead['aim'] = null): PointerRead => ({ resolution: { word, terms: [] }, aim, miss })
   if (!word.isPointer) return none('not-pointing')
-  const { t } = word
+  const t = when?.at ?? word.t
+  const windowMs = when?.windowMs ?? TIP_WINDOW_MS
   const w = word.word.toLowerCase().replace(/[^a-z]/g, '')
   if (w === 'these' || w === 'those') {
     // A sweep across several terms: no rest needed.
@@ -146,7 +151,7 @@ export function readPointer(word: WordEvent, terms: Term[], tips: TipBuffer): Po
   }
   // this / that / here: whisper only if the pointer (of any kind) rested on one spot around the word.
   // The pointer that counts is the one seen around the word itself (a laser put away a moment ago does not).
-  const aim = dwellPoint(tips.leadAt(t, TIP_WINDOW_MS), t)
+  const aim = dwellPoint(tips.leadAt(t, windowMs), t, windowMs)
   if (!aim) return none('not-pointing')
   const term = termAt(terms, aim.x, aim.y)
   return term ? { resolution: { word, terms: [term] }, aim, miss: null } : none('empty-space', aim)
