@@ -30,7 +30,10 @@ import { ReportCard } from './ReportCard'
 import { NotesPanel } from './NotesPanel'
 import { ModeSwitch, PointerLog, Readout, StatsStrip, type Last } from './Panels'
 import { Readiness } from './Readiness'
-import { createBroadcaster, resolutionMsg, finalMsg, boardMsg, modeMsg, subscribe } from '../live/broadcast'
+import { createBroadcaster, resolutionMsg, finalMsg, boardMsg, modeMsg, subscribe, markedMsg, assistMsg, noticeMsg } from '../live/broadcast'
+import { askScene } from '../live/assist'
+import { isClassEnding, endingNotice } from '../live/classEnding'
+import { grabJpeg } from '../vision/grabFrame'
 import './judge.css'
 
 const ACCENT = '#3fb98a'
@@ -168,7 +171,24 @@ export function JudgeScreen() {
   if (!bcRef.current) bcRef.current = createBroadcaster()
   useEffect(() => () => bcRef.current.close(), [])
   const boardRef = useRef<Resolution | null>(null)
+  const askingRef = useRef(false)
   useEffect(() => subscribe(m => {
+    if (m.type === 'bookmark') {
+      // "I didn't get this": marks the sentence being said now; the teacher sees it in the transcript.
+      const count = transcriptRef.current.addBookmark(performance.now())
+      setSegs(transcriptRef.current.segments())
+      bcRef.current.send(markedMsg(count))
+      return
+    }
+    if (m.type === 'ask') {
+      if (askingRef.current) return // one answer at a time; a second press while looking gets that answer
+      askingRef.current = true
+      const photo = document.querySelector<HTMLImageElement>('img.demo-photo')
+      void askScene(() => grabJpeg(photo ?? videoRef.current!))
+        .then(text => bcRef.current.send(assistMsg(text)))
+        .finally(() => { askingRef.current = false })
+      return
+    }
     if (m.type !== 'hello') return
     bcRef.current.send(modeMsg(!whisperRef.current))
     if (boardRef.current) bcRef.current.send(boardMsg(boardRef.current))
@@ -331,7 +351,10 @@ export function JudgeScreen() {
     const all = transcriptRef.current.segments()
     setSegs(all)
     const seg = all[all.length - 1]
-    if (seg) bcRef.current.send(finalMsg(seg.text, substitute(seg.text, seg.resolutions)))
+    if (!seg) return
+    const meant = substitute(seg.text, seg.resolutions)
+    bcRef.current.send(finalMsg(seg.text, meant))
+    if (isClassEnding(seg.text)) bcRef.current.send(noticeMsg(endingNotice(meant))) // only when it matters
   }), [])
 
   const toggleWhisper = () => {

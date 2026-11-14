@@ -6,6 +6,13 @@ export type Msg =
   | { type: 'board'; phrases: string[] }
   | { type: 'mode'; withoutApp: boolean }
   | { type: 'hello' }
+  // student -> judge: "I didn't understand this" and "what is happening right now?"
+  | { type: 'bookmark' }
+  | { type: 'ask' }
+  // judge -> student: bookmark confirmed, the answer to "ask", and an alert worth hearing (class ending)
+  | { type: 'marked'; count: number }
+  | { type: 'assist'; text: string }
+  | { type: 'notice'; text: string }
 
 export type Channel = { postMessage(m: unknown): void; close(): void; onmessage: ((e: { data: unknown }) => void) | null }
 
@@ -24,6 +31,11 @@ export const boardMsg = (r: Resolution): Msg => ({ type: 'board', phrases: r.ter
 export const modeMsg = (withoutApp: boolean): Msg => ({ type: 'mode', withoutApp })
 
 export const helloMsg = (): Msg => ({ type: 'hello' })
+export const bookmarkMsg = (): Msg => ({ type: 'bookmark' })
+export const askMsg = (): Msg => ({ type: 'ask' })
+export const markedMsg = (count: number): Msg => ({ type: 'marked', count })
+export const assistMsg = (text: string): Msg => ({ type: 'assist', text })
+export const noticeMsg = (text: string): Msg => ({ type: 'notice', text })
 
 export function createBroadcaster(channel: Channel | null = open()) {
   return { send: (m: Msg) => channel?.postMessage(m), close: () => channel?.close() }
