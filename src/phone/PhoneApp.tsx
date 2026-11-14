@@ -79,7 +79,7 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
   }
   const send = (m: object) => r.relay?.send(m)
 
-  const join = (t: string) => {
+  const join = (t: string, ended = '') => {
     send({ type: 'join', room: t })
     send(helloMsg())
     r.sent = true
@@ -90,11 +90,11 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
     if (r.waited) {
       r.waited = false
       earcons().play('start')
-      announce(`${n} started.`)
+      announce(`${ended}${n} started.`)
       return
     }
     earcons().play('join')
-    let text = `Connected to ${n}.`
+    let text = `${ended}Connected to ${n}.`
     if (r.mode === 'screenreader') {
       try {
         if (!store.getItem(TIP_KEY)) {
@@ -122,7 +122,7 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
       return
     }
     const pick = pickRoom(live, saved, token)
-    if (pick.kind === 'join') join(pick.token)
+    if (pick.kind === 'join') join(pick.token, ended)
     else if (pick.kind === 'choose') {
       if (r.phase !== 'choose') announce(`${ended}Choose a class.`)
       r.phase = 'choose'
@@ -139,7 +139,7 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
     if (m.type === 'rooms') return onRooms(m.live ?? [], m.names ?? {})
     let text: string | null = null
     if (m.type === 'resolution') text = m.muted ? 'Without app: nothing whispered.' : m.phrase ?? 'nothing in reach'
-    else if (m.type === 'board') text = m.phrases.join(', ') || 'board is empty'
+    else if (m.type === 'board') text = (m.phrases ?? []).join(', ') || 'board is empty'
     else if (m.type === 'assist' || m.type === 'notice') text = m.text
     else if (m.type === 'marked') text = marked(m.count, m.removed)
     else if (m.type === 'final') setMeant(m.meant)
@@ -163,6 +163,8 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
   }
 
   const start = (m: VoiceMode) => {
+    if (r.relay) return
+    r.dropped = false
     try { store.setItem(VOICE_KEY, m) } catch { /* no storage */ }
     r.mode = m
     r.voice = createVoice(m, deps.synth)
@@ -203,6 +205,7 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
     r.release?.()
     r.release = null
     clearTimeout(r.undoT)
+    r.voice?.cancel()
     r.phase = 'idle'
     r.joined = null
     setArmed(false)

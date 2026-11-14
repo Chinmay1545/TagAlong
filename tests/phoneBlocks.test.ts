@@ -63,6 +63,14 @@ describe('voice', () => {
     expect(spoken[1].text).toBe('')
     vi.unstubAllGlobals()
   })
+  it('cancel stops in-flight speech in speak mode only', () => {
+    const synth = { cancel: vi.fn(), speak: vi.fn() }
+    createVoice('speak', synth).cancel()
+    expect(synth.cancel).toHaveBeenCalledTimes(1)
+    const quiet = { cancel: vi.fn(), speak: vi.fn() }
+    createVoice('screenreader', quiet).cancel()
+    expect(quiet.cancel).not.toHaveBeenCalled()
+  })
   it('screenreader mode never touches synth', () => {
     const synth = { cancel: vi.fn(), speak: vi.fn() }
     const v = createVoice('screenreader', synth)

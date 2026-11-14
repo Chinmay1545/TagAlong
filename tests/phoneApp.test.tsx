@@ -217,6 +217,138 @@ describe('phone app', () => {
   })
 })
 
+const MARK = "Mark: I didn't get this"
+const raw = () => live().textContent!
+
+describe('phone app: pinned behaviours', () => {
+  it('an identical announcement twice still changes the live region text', () => {
+    mount('screenreader')
+    press('Start listening to Math 201')
+    msg({ type: 'assist', text: 'Look left' })
+    const a = raw()
+    msg({ type: 'assist', text: 'Look left' })
+    expect(raw()).not.toBe(a)
+    expect(said()).toBe('Look left')
+    const b = raw()
+    press('Repeat last')
+    expect(raw()).not.toBe(b)
+    expect(said()).toBe('Look left')
+  })
+
+  it('open without a prior drop announces nothing', () => {
+    mount('screenreader')
+    press('Start listening to Math 201')
+    status('open')
+    expect(said()).toBe('')
+    expect(earcons.play).not.toHaveBeenCalledWith('back')
+  })
+
+  it('after a reconnect, rooms without the joined token says Class ended', () => {
+    mount('screenreader')
+    press('Start listening to Math 201')
+    rooms([TOKEN])
+    status('reconnecting')
+    status('open')
+    rooms([])
+    expect(said()).toBe('Class ended. Waiting for Math 201 to start.')
+  })
+
+  it('unmount closes the relay, releases the wake lock and leaves no timers', () => {
+    vi.useFakeTimers()
+    mount('screenreader')
+    press('Start listening to Math 201')
+    press(MARK)
+    press('Stop listening')
+    cleanup()
+    expect(close).toHaveBeenCalled()
+    expect(release).toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('the stop prompt times out after 4 seconds', () => {
+    vi.useFakeTimers()
+    mount('screenreader')
+    press('Start listening to Math 201')
+    press('Stop listening')
+    act(() => { vi.advanceTimersByTime(3999) })
+    expect(screen.getByRole('button', { name: 'Press again to stop' })).toBeTruthy()
+    act(() => { vi.advanceTimersByTime(1) })
+    expect(screen.getByRole('button', { name: 'Stop listening' })).toBeTruthy()
+  })
+
+  it('undo lasts exactly 5 seconds and a second Mark restarts the window', () => {
+    vi.useFakeTimers()
+    mount('screenreader')
+    press('Start listening to Math 201')
+    press(MARK)
+    act(() => { vi.advanceTimersByTime(4999) })
+    expect(screen.getByRole('button', { name: 'Undo mark' })).toBeTruthy()
+    act(() => { vi.advanceTimersByTime(1) })
+    expect(screen.getByRole('button', { name: MARK })).toBeTruthy()
+    // restart: mark, undo at 3s, mark again; the first timer must not cut the second window short
+    press(MARK)
+    act(() => { vi.advanceTimersByTime(3000) })
+    press('Undo mark')
+    press(MARK)
+    act(() => { vi.advanceTimersByTime(2500) })
+    expect(screen.getByRole('button', { name: 'Undo mark' })).toBeTruthy()
+    act(() => { vi.advanceTimersByTime(2500) })
+    expect(screen.getByRole('button', { name: MARK })).toBeTruthy()
+  })
+
+  it('stop during a drop, start again: first open does not say Back', () => {
+    mount('screenreader')
+    press('Start listening to Math 201')
+    rooms([TOKEN])
+    status('reconnecting')
+    press('Stop listening')
+    press('Press again to stop')
+    press('Start listening to Math 201')
+    earcons.play.mockClear()
+    status('open')
+    expect(said()).not.toBe('Back.')
+    expect(earcons.play).not.toHaveBeenCalledWith('back')
+  })
+
+  it('stop while waiting, start again, join says Connected not started', () => {
+    mount('screenreader')
+    press('Start listening to Math 201')
+    rooms([])
+    press('Stop listening')
+    press('Press again to stop')
+    press('Start listening to Math 201')
+    rooms([TOKEN])
+    expect(said()).toContain('Connected to Math 201.')
+  })
+
+  it('Class ended is kept when another saved class is live and joined at once', () => {
+    data.set('tagalong:classes', JSON.stringify([{ token: OTHER, name: 'Bio' }]))
+    mount('screenreader')
+    press('Start listening to Math 201')
+    rooms([TOKEN])
+    rooms([OTHER])
+    expect(said()).toBe('Class ended. Connected to Bio.')
+  })
+
+  it('a board message without phrases does not throw', () => {
+    mount('screenreader')
+    press('Start listening to Math 201')
+    msg({ type: 'board' })
+    expect(said()).toBe('board is empty')
+  })
+
+  it('stop in speak mode cancels in-flight speech', () => {
+    mount('speak')
+    press('Start listening to Math 201')
+    synth.cancel.mockClear()
+    press('Stop listening')
+    press('Press again to stop')
+    expect(synth.cancel).toHaveBeenCalledTimes(2) // explicit cancel, then say() cancels before Stopped.
+    const last = synth.speak.mock.calls.at(-1)![0]
+    expect(last.text).toBe('Stopped.')
+  })
+})
+
 describe('routing', () => {
   it('/c/<token>?n=Math%20201 is the phone app', () => {
     expect(routeFor(`/c/${TOKEN}`, '?n=Math%20201')).toEqual({ kind: 'phone', token: TOKEN, name: 'Math 201' })
