@@ -1,7 +1,9 @@
 import { BedrockRuntimeClient, ConverseCommand, ConverseStreamCommand } from '@aws-sdk/client-bedrock-runtime'
 import { BOARD_PROMPT } from './prompt'
+import { SCENE_PROMPT } from './describe'
 
 export const NOTES_DEFAULT_MODEL = 'us.amazon.nova-micro-v1:0'
+export const DESCRIBE_DEFAULT_MODEL = 'us.amazon.nova-lite-v1:0' // Micro is text-only; Lite sees images
 export const BEDROCK_QUOTA_MESSAGE = 'Bedrock quota is 0 on this account — request a quota increase or use the event\'s AWS account'
 
 type Sender = { send: (cmd: ConverseCommand) => Promise<{ output?: { message?: { content?: { text?: string }[] } }; stopReason?: string }> }
@@ -63,4 +65,13 @@ export function bedrockStreamModelFromEnv(env: Record<string, string | undefined
 export function bedrockCallTextFromEnv(env: Record<string, string | undefined>) {
   const id = env.NOTES_MODEL_ID?.trim() || NOTES_DEFAULT_MODEL
   return (prompt: string) => makeBedrockCallText(client(), id)(prompt)
+}
+
+// "What is happening?": one camera frame, a short answer.
+export const makeBedrockDescribe = (client: Sender, modelId = DESCRIBE_DEFAULT_MODEL) => (jpeg: Buffer) =>
+  converse(client, modelId, [{ image: { format: 'jpeg', source: { bytes: jpeg } } }, { text: SCENE_PROMPT }], 'room describer')
+
+export function bedrockDescribeFromEnv(env: Record<string, string | undefined>) {
+  const id = env.DESCRIBE_MODEL_ID?.trim() || DESCRIBE_DEFAULT_MODEL
+  return (jpeg: Buffer) => makeBedrockDescribe(client(), id)(jpeg)
 }

@@ -1,14 +1,25 @@
 import { POINTER_WORDS } from '../core/config'
 import type { Resolution } from '../core/types'
 
-export type Segment = { text: string; t0: number; t1: number; resolutions: Resolution[] }
+export type Segment = { text: string; t0: number; t1: number; resolutions: Resolution[]; bookmarked?: boolean }
 
 const SLACK_MS = 250 // Finals arrive after their utterance's resolutions; t0/t1 are on the performance.now() clock (see finalTimes)
 
 export function createTranscript() {
   let segs: Segment[] = []
   let pending: Resolution[] = []
+  let bookmarks: number[] = []
+  // A bookmark marks the last sentence that had started by then: the one being spoken, or in a pause the one
+  // just heard. Before anything was said it marks the first. Worked out on read, so a bookmark pressed
+  // mid-sentence moves onto that sentence once its final arrives.
+  const markedAt = (b: number) => {
+    let i = segs.length - 1
+    while (i > 0 && segs[i].t0 > b) i--
+    return Math.max(0, i)
+  }
   return {
+    // "I didn't understand this" (t: performance.now()). Returns how many bookmarks there are now.
+    addBookmark(t: number): number { bookmarks.push(t); return bookmarks.length },
     // Usually a resolution comes before its sentence's final and waits in `pending`. A held "this" can be
     // whispered after its sentence ended: it then joins that segment (true = an existing segment changed).
     addResolution(r: Resolution): boolean {
@@ -24,8 +35,11 @@ export function createTranscript() {
       pending = pending.filter(r => r.word.t > limit)
       segs.push({ text, t0, t1, resolutions })
     },
-    segments: () => segs.slice(),
-    clear() { segs = []; pending = [] },
+    segments: (): Segment[] => {
+      const marked = new Set(bookmarks.map(markedAt))
+      return segs.map((s, i) => ({ ...s, bookmarked: marked.has(i) }))
+    },
+    clear() { segs = []; pending = []; bookmarks = [] },
   }
 }
 
@@ -58,5 +72,5 @@ export function substitute(text: string, resolutions: Resolution[]): string {
 }
 
 export function toPlainText(segs: Segment[]): string {
-  return segs.map(s => `Said: ${s.text}\nMeant: ${substitute(s.text, s.resolutions)}\n`).join('\n')
+  return segs.map(s => `${s.bookmarked ? 'Marked: did not understand\n' : ''}Said: ${s.text}\nMeant: ${substitute(s.text, s.resolutions)}\n`).join('\n')
 }

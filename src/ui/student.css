@@ -15,7 +15,7 @@
 body { margin: 0; background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; }
 .mono { font-family: var(--mono); }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.student { min-height: 100dvh; display: grid; grid-template-rows: auto 1fr auto auto; gap: 24px; padding: 20px 24px 28px; max-width: 1600px; margin: 0 auto; }
+.student { min-height: 100dvh; display: grid; grid-template-rows: auto 1fr; grid-auto-rows: auto; gap: 24px; padding: 20px 24px 28px; max-width: 1600px; margin: 0 auto; }
 .s-head { display: flex; justify-content: space-between; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--line); font-size: 13px; letter-spacing: 0.14em; color: var(--muted); text-transform: uppercase; }
 .dot { display: inline-block; width: 8px; height: 8px; margin-right: 12px; border-radius: 50%; background: var(--accent); animation: pulse 2.4s ease-in-out infinite; }
 .s-stage { display: flex; flex-direction: column; justify-content: center; min-width: 0; padding: 0 0 0 clamp(0px, 6vw, 96px); }
@@ -31,6 +31,14 @@ body { margin: 0; background: var(--bg); color: var(--text); -webkit-font-smooth
 .s-meant { border-top: 1px solid var(--line); padding-top: 16px; }
 .s-meant h2 { margin: 0 0 8px; font-size: 12px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); }
 .s-meant p { margin: 0; font-size: clamp(18px, 2vw, 28px); line-height: 1.4; color: var(--muted); max-width: 70ch; }
+/* Two big targets: easy to find with VoiceOver or by touch. */
+.s-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.s-btn { min-height: 72px; padding: 16px 24px; font: inherit; font-size: clamp(18px, 2vw, 24px); font-weight: 600; letter-spacing: -0.01em; text-align: left; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 14px; cursor: pointer; transition: transform 0.2s var(--spring), border-color 0.2s var(--spring); }
+.s-btn:hover { border-color: var(--accent); }
+.s-btn:active { transform: scale(0.98); }
+.s-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.s-help { border-top: 1px solid var(--line); padding-top: 16px; animation: rise 0.28s var(--spring) both; }
+.s-help p { margin: 0; font-size: clamp(20px, 2.4vw, 32px); line-height: 1.35; color: var(--text); max-width: 60ch; }
 @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
 @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(0.7); opacity: 0.45; } }
 @media (prefers-reduced-motion: reduce) {

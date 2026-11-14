@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { BOARD_PROMPT } from './prompt'
+import { SCENE_PROMPT } from './describe'
 
 // Fallback board reader on the Anthropic API, used when ANTHROPIC_API_KEY is set
 // (Bedrock quota is 0 on the team account). Off the live path: the resolver never calls this.
@@ -163,5 +164,29 @@ export function anthropicCallModelFromEnv(env: Record<string, string | undefined
   return (jpeg: Buffer) => {
     client ??= new Anthropic({ timeout: 30_000, maxRetries: 1 })
     return makeAnthropicCallModel(client, model, tuning)(jpeg)
+  }
+}
+
+// "What is happening?": one camera frame, a short answer. Haiku: fast enough to answer while it still matters.
+export function makeAnthropicDescribe(client: MessagesClient, model = ANTHROPIC_NOTES_DEFAULT_MODEL) {
+  return (jpeg: Buffer): Promise<string> => createText(client, {
+    model,
+    max_tokens: 1000,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: jpeg.toString('base64') } },
+        { type: 'text', text: SCENE_PROMPT },
+      ],
+    }],
+  }, 'describe the room')
+}
+
+export function anthropicDescribeFromEnv(env: Record<string, string | undefined>) {
+  let client: Anthropic | undefined
+  const model = env.ANTHROPIC_DESCRIBE_MODEL_ID?.trim() || ANTHROPIC_NOTES_DEFAULT_MODEL
+  return (jpeg: Buffer) => {
+    client ??= new Anthropic({ timeout: 30_000, maxRetries: 1 })
+    return makeAnthropicDescribe(client, model)(jpeg)
   }
 }
