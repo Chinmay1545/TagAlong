@@ -1,4 +1,4 @@
-import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime'
+import { BedrockRuntimeClient, ConverseCommand, ConverseStreamCommand } from '@aws-sdk/client-bedrock-runtime'
 import { BOARD_PROMPT } from './prompt'
 
 export const NOTES_DEFAULT_MODEL = 'us.amazon.nova-micro-v1:0'
@@ -22,7 +22,24 @@ async function converse(client: Sender, modelId: string, content: any[], what: s
 export const makeBedrockCallModel = (client: Sender, modelId: string) => (jpeg: Buffer) =>
   converse(client, modelId, [{ image: { format: 'jpeg', source: { bytes: jpeg } } }, { text: BOARD_PROMPT }], 'board reader')
 
-export const makeBedrockCallText = (client: Sender, modelId: string) => (prompt: string) =>
+type StreamSender = { send: (cmd: ConverseStreamCommand) => Promise<{ stream?: AsyncIterable<{ contentBlockDelta?: { delta?: { text?: string } } }> }> }
+
+// Streaming board reader: yields reply text as Bedrock generates it.
+export const makeBedrockStreamModel = (client: StreamSender, modelId: string) => async function* (jpeg: Buffer): AsyncGenerator<string> {
+  let out
+  try {
+    out = await client.send(new ConverseStreamCommand({ modelId, messages: [{ role: 'user', content: [{ image: { format: 'jpeg', source: { bytes: jpeg } } }, { text: BOARD_PROMPT }] }], inferenceConfig: { maxTokens: 1000, temperature: 0 } }))
+  } catch (e) {
+    if ((e as Error)?.name === 'ThrottlingException') throw new Error('board reader is rate limited (Bedrock throttled the call; the quota may be 0)')
+    throw e
+  }
+  for await (const ev of out.stream ?? []) {
+    const t = ev.contentBlockDelta?.delta?.text
+    if (t) yield t
+  }
+}
+
+export const makeBedrockCallText =(client: Sender, modelId: string) => (prompt: string) =>
   converse(client, modelId, [{ text: prompt }], 'notes writer')
 
 // Client created lazily so startup never needs credentials.
@@ -33,6 +50,12 @@ export function bedrockCallModelFromEnv(env: Record<string, string | undefined>)
   return (jpeg: Buffer) => {
     if (!env.BOARD_MODEL_ID) throw new Error('BOARD_MODEL_ID is not set (add it to .env)')
     return makeBedrockCallModel(client(), env.BOARD_MODEL_ID)(jpeg)
+  }
+}
+export function bedrockStreamModelFromEnv(env: Record<string, string | undefined>) {
+  return (jpeg: Buffer) => {
+    if (!env.BOARD_MODEL_ID) throw new Error('BOARD_MODEL_ID is not set (add it to .env)')
+    return makeBedrockStreamModel(client() as unknown as StreamSender, env.BOARD_MODEL_ID)(jpeg)
   }
 }
 export function bedrockCallTextFromEnv(env: Record<string, string | undefined>) {

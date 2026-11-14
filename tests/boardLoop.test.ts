@@ -138,3 +138,68 @@ describe('board loop: reset button', () => {
     h.stop()
   })
 })
+
+// A streamed reply the test feeds by hand: push(line objects), then close().
+function manualStream() {
+  let ctl!: ReadableStreamDefaultController<Uint8Array>
+  const body = new ReadableStream<Uint8Array>({ start(c) { ctl = c } })
+  return {
+    response: new Response(body, { headers: { 'content-type': 'application/x-ndjson' } }),
+    push: (...lines: unknown[]) => ctl.enqueue(new TextEncoder().encode(lines.map(l => JSON.stringify(l) + '\n').join(''))),
+    close: () => ctl.close(),
+  }
+}
+
+describe('board loop: streamed reads', () => {
+  const N: Term = { id: 1, latex: 'y', phrase: 'the y on the right', box: { x: 0.6, y: 0.2, w: 0.1, h: 0.1 } }
+
+  it('draws each term as it arrives, on top of the previous board', async () => {
+    const h = harness()
+    h.replies.push(fraction)
+    await h.tick()
+    const s = manualStream()
+    h.fetchMock.mockImplementationOnce(async () => s.response as never)
+    h.cam.scene = 120
+    await h.tick() // read starts
+    s.push({ type: 'term', term: N })
+    await vi.advanceTimersByTimeAsync(0)
+    const partial = h.shown.at(-1)!
+    expect(partial.map(t => t.latex)).toEqual(['2x', '2x', 'y']) // old boxes kept while the read is running
+    expect(new Set(partial.map(t => t.id)).size).toBe(3) // no id clash
+    s.push({ type: 'done', count: 1, ms: 1 })
+    s.close()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(h.shown.at(-1)!.map(t => t.latex)).toEqual(['y'])
+    h.stop()
+  })
+
+  it('a read that fails half way puts the previous board back', async () => {
+    const h = harness()
+    h.replies.push(fraction)
+    await h.tick()
+    const s = manualStream()
+    h.fetchMock.mockImplementationOnce(async () => s.response as never)
+    h.cam.scene = 120
+    await h.tick()
+    s.push({ type: 'term', term: N })
+    await vi.advanceTimersByTimeAsync(0)
+    s.push({ type: 'error', error: 'board read failed' })
+    s.close()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(h.shown.at(-1)).toEqual(fraction)
+    h.stop()
+  })
+
+  it('a term streamed after reset is ignored', async () => {
+    const h = harness()
+    const s = manualStream()
+    h.fetchMock.mockImplementationOnce(async () => s.response as never)
+    await h.tick()
+    h.reset()
+    s.push({ type: 'term', term: N }, { type: 'done', count: 1, ms: 1 })
+    s.close()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(h.shown).toEqual([[]])
+    h.stop()
+  })
+})
