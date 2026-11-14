@@ -1,5 +1,5 @@
 import { readPointer, termAt, type When } from '../core/resolver'
-import { HOLD_MAX_MS, LATE_WINDOW_MS, MAX_DIST, RECHECK_MS, SCOPE_WAIT_MS, TIP_WINDOW_MS, WEB_SPEECH_LAG_MS } from '../core/config'
+import { HOLD_MAX_MS, LATE_WINDOW_MS, MAX_DIST, RECHECK_MS, SCOPE_SPAN_MS, SCOPE_WAIT_MS, TIP_WINDOW_MS, WEB_SPEECH_LAG_MS } from '../core/config'
 import type { TipBuffer } from '../core/tipBuffer'
 import type { Box, Resolution, Term, WordEvent } from '../core/types'
 import type { createWhisperPlayer } from '../audio/whisper'
@@ -51,12 +51,12 @@ export function createLive({ getTerms, tips, player, now = () => performance.now
   // behind it. `round` goes up on cancelWaiting, so a timer set before it does nothing when it fires.
   let waiting = false
   let round = 0
-  let queue: { word: WordEvent; when: When; wait: boolean }[] = []
+  let queue: { word: WordEvent; when: When; wait: number }[] = []
   const drain = () => {
     while (!waiting && queue.length) { const next = queue.shift()!; start(next.word, next.when, next.wait) }
   }
-  const start = (word: WordEvent, when: When, wait: boolean) => {
-    if (!wait) { resolve(word, when, true); return }
+  const start = (word: WordEvent, when: When, wait: number) => {
+    if (wait <= 0) { resolve(word, when, true); return }
     // Transcribe sends words one by one: the scope words after "this" arrive a moment later. Look at the
     // pointer around the word's own time (`when`), but read the words only after they had time to come.
     waiting = true
@@ -66,9 +66,9 @@ export function createLive({ getTerms, tips, player, now = () => performance.now
       waiting = false
       resolve(word, when, true)
       drain()
-    }, SCOPE_WAIT_MS)
+    }, wait)
   }
-  const take = (word: WordEvent, when: When, wait: boolean) => {
+  const take = (word: WordEvent, when: When, wait: number) => {
     if (waiting) { queue.push({ word, when, wait }); return }
     start(word, when, wait)
   }
@@ -78,9 +78,16 @@ export function createLive({ getTerms, tips, player, now = () => performance.now
   const itemT = (it: WordItem) => (it.startTime !== undefined && audioStart !== null ? audioStart + it.startTime * 1000 : it.arrivedAt)
   const norm = (it: WordItem) => it.content.toLowerCase().replace(/[^a-z]/g, '')
   const indexOf = (word: WordEvent) => utter.findIndex(it => norm(it) === word.word && itemT(it) === word.t)
+  // Words that may be scope words: the next 3 items (2 for browser speech, which has no timing), said within
+  // SCOPE_SPAN_MS after the pointer word, in the same segment when segments exist.
+  const lateWords = new WeakSet<WordEvent>()
   const wordsAfter = (word: WordEvent): string[] => {
     const i = indexOf(word)
-    return i < 0 ? [] : utter.slice(i + 1, i + 4).map(norm)
+    if (i < 0) return []
+    const me = utter[i]
+    return utter.slice(i + 1, i + 1 + (lateWords.has(word) ? 2 : 3))
+      .filter(it => (me.segment === undefined || it.segment === undefined || it.segment === me.segment) && (lateWords.has(word) || itemT(it) - word.t <= SCOPE_SPAN_MS))
+      .map(norm)
   }
   // One pointer word. when: the moment to look at. recheck: allowed to wait and look once more.
   const resolve = (word: WordEvent, when: When, recheck: boolean) => {
@@ -119,10 +126,14 @@ export function createLive({ getTerms, tips, player, now = () => performance.now
         // A late word (browser speech) was said some time before it arrived, and the finger may have left
         // since. Look around the moment it was probably said, and further back, instead of around now.
         const when: When = late ? { at: word.t - WEB_SPEECH_LAG_MS, windowMs: LATE_WINDOW_MS } : { at: word.t, windowMs: TIP_WINDOW_MS }
-        // Timed (Transcribe) word with nothing after it yet: wait for scope words. Browser speech has the whole phrase.
+        // Timed (Transcribe) word with nothing (or only "whole") after it yet: wait the rest of SCOPE_WAIT_MS since
+        // it was said for scope words. Browser speech has the whole phrase.
+        if (late) lateWords.add(word)
         const i = indexOf(word)
-        const timed = !late && SINGLE.has(word.word) && i >= 0 && utter[i].startTime !== undefined && audioStartPerf !== null && now() - word.t < SCOPE_WAIT_MS // a word said long ago has had its scope words already
-        take(word, when, timed && i === utter.length - 1)
+        const timed = !late && SINGLE.has(word.word) && i >= 0 && utter[i].startTime !== undefined && audioStartPerf !== null
+        const after = timed ? wordsAfter(word) : []
+        const open = after.every(w => w === 'whole') && (after.length === 0 ? i === utter.length - 1 : i + after.length === utter.length - 1)
+        take(word, when, timed && open ? SCOPE_WAIT_MS - (now() - word.t) : 0)
       }
     },
     cancelWaiting() { round++; waiting = false; queue = [] },

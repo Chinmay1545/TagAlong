@@ -3,7 +3,7 @@ import { TipBuffer } from '../src/core/tipBuffer'
 import { createLive } from '../src/live/live'
 import { readPointer } from '../src/core/resolver'
 import { groupKind, scopeFrom } from '../src/core/scope'
-import { SCOPE_WAIT_MS } from '../src/core/config'
+import { SCOPE_SPAN_MS, SCOPE_WAIT_MS } from '../src/core/config'
 import type { Resolution, Term } from '../src/core/types'
 import type { WordItem } from '../src/speech/words'
 import { inOrder, move, rest } from './helpers/board'
@@ -47,7 +47,10 @@ describe('scope words', () => {
     expect(read(0.35, 0.45, ['denominator'])).toEqual([5])
   })
   it('whole / fraction pick the largest / the fraction', () => {
-    expect(read(0.25, 0.25, ['the', 'whole', 'thing'])).toEqual([6])
+    expect(read(0.25, 0.25, ['whole', 'thing'])).toEqual([6])
+    expect(read(0.25, 0.25, ['whole', 'top', 'part'])).toEqual([4])
+    expect(read(0.25, 0.25, ['whole'])).toEqual([1])
+    for (const weak of ['all', 'everything', 'expression']) expect(read(0.25, 0.25, ['is', weak])).toEqual([1])
     expect(read(0.25, 0.25, ['fraction'])).toEqual([6])
   })
 })
@@ -61,11 +64,20 @@ describe('ties are silent', () => {
 })
 
 describe('sweep for this', () => {
-  it('no rest but the pointer crossed two terms: the group holding both', () => {
+  it('no rest, crossed two terms, but no scope word: silent (the gate holds)', () => {
     const tips = new TipBuffer()
     inOrder(move('finger', { x: 0.25, y: 0.25 }, { x: 0.5, y: 0.25 }, 100, 700, 50)).forEach(p => tips.push(p))
-    const r = readPointer(word('this', 400), [A, B, C, TOP, BOT, FRAC], tips)
-    expect(r.sweep).toBe(TOP)
+    expect(readPointer(word('this', 400), TERMS, tips).sweep).toBeUndefined()
+  })
+  it('sweep across the top + "top part": the top group', () => {
+    const tips = new TipBuffer()
+    inOrder(move('finger', { x: 0.25, y: 0.25 }, { x: 0.5, y: 0.25 }, 100, 700, 50)).forEach(p => tips.push(p))
+    expect(readPointer(word('this', 400), TERMS, tips, undefined, ['top', 'part']).sweep).toBe(TOP)
+  })
+  it('terms only near the path (not under it) do not count', () => {
+    const tips = new TipBuffer()
+    inOrder(move('finger', { x: 0.31, y: 0.25 }, { x: 0.39, y: 0.25 }, 100, 700, 50)).forEach(p => tips.push(p))
+    expect(readPointer(word('this', 400), TERMS, tips, undefined, ['top']).sweep).toBeUndefined()
   })
   it('crossing one term: silent', () => {
     const tips = new TipBuffer()
@@ -109,6 +121,36 @@ describe('waiting for scope words (Transcribe)', () => {
     s.live.handleItems([s.item('top', 1.3)], 0)
     s.fire()
     expect(s.got).toEqual([[4]])
+  })
+  it('the second sentence comes later than SCOPE_SPAN_MS: plain term', () => {
+    const s = setup()
+    s.live.handleItems([s.item('this', 1.0), s.item('top', 1 + (SCOPE_SPAN_MS + 100) / 1000)], 0)
+    s.fire()
+    expect(s.got).toEqual([[1]])
+  })
+  it('"this is all about", "that, all of you": plain term', () => {
+    const s = setup()
+    s.live.handleItems([s.item('this', 1.0), s.item('is', 1.1), s.item('all', 1.2), s.item('about', 1.3)], 0)
+    s.fire()
+    expect(s.got).toEqual([[1]])
+  })
+  it('"this whole" then "thing" later: the largest group; "this whole" then "top" later: the top', () => {
+    const a = setup()
+    a.live.handleItems([a.item('this', 1.0), a.item('whole', 1.2)], 0)
+    expect(a.timers).toHaveLength(1)
+    a.live.handleItems([a.item('this', 1.0), a.item('whole', 1.2), a.item('thing', 1.4)], 0)
+    a.fire()
+    expect(a.got).toEqual([[6]])
+    const b = setup()
+    b.live.handleItems([b.item('this', 1.0), b.item('whole', 1.2)], 0)
+    b.live.handleItems([b.item('top', 1.4)], 0)
+    b.fire()
+    expect(b.got).toEqual([[4]])
+  })
+  it('waits only the remainder of SCOPE_WAIT_MS', () => {
+    const s = setup()
+    s.live.handleItems([s.item('this', 0.85)], 0) // said 150 ms before it arrived
+    expect(s.timers[0].ms).toBe(SCOPE_WAIT_MS - 150)
   })
   it('"this is my favorite" with no rest: silent', () => {
     const s = setup(move('finger', { x: 0.9, y: 0.9 }, { x: 0.95, y: 0.9 }, 0, 3000, 50))

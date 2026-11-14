@@ -29,3 +29,4 @@ export const LASER_STATIC_MS = 20000 // any dot that has not moved at all for th
 export const LASER_MASK_MS = 400 // the board loop hides laser dots seen this recently from its change check
 export const TIE_DIST = 0.012 // aim outside every box: two unrelated boxes this close to equally near mean "cannot tell", so stay silent
 export const SCOPE_WAIT_MS = 300 // a timed "this" with no later words yet waits this long for scope words ("this top part") to arrive
+export const SCOPE_SPAN_MS = 800 // scope words count only if said within this long after "this"

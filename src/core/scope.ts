@@ -11,14 +11,15 @@ const SCOPE: Record<string, string> = {
   bottom: 'bottom', denominator: 'bottom', lower: 'bottom',
   fraction: 'fraction', equation: 'equation', side: 'side',
   bracket: 'brackets', brackets: 'brackets', parentheses: 'brackets',
-  whole: 'whole', everything: 'whole', all: 'whole', expression: 'whole',
 }
 
-// `after`: the words that follow the pointer word in its utterance. Only the next 3 count.
+// `after`: the words that follow the pointer word, already cut to the ones close enough (live.ts).
+// "whole" counts only as "whole thing" (the largest group); alone it is skipped, so "this whole top part" is top.
 export function scopeFrom(after: string[]): string | null {
-  for (const w of after.slice(0, 3)) {
-    const k = SCOPE[w.toLowerCase().replace(/[^a-z]/g, '')]
-    if (k) return k
+  const ws = after.map(w => w.toLowerCase().replace(/[^a-z]/g, ''))
+  for (let i = 0; i < ws.length; i++) {
+    if (ws[i] === 'whole') { if (ws[i + 1] === 'thing') return 'whole'; continue }
+    if (SCOPE[ws[i]]) return SCOPE[ws[i]]
   }
   return null
 }

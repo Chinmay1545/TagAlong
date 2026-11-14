@@ -168,20 +168,20 @@ export type PointerRead = { resolution: Resolution; aim: { x: number; y: number 
 // TIP_WINDOW_MS; live.ts looks earlier and wider for words that arrive late (browser speech).
 export type When = { at: number; windowMs: number }
 
-// "this" with no rest, but the pointer crossed 2+ single terms around the word: the smallest group holding
-// all of them. Null otherwise.
-export function sweepGroup(terms: Term[], tips: TipBuffer, t: number): Term | null {
+// "this" with no rest: the pointer passed over 2+ single terms (really under it) around the word AND a scope
+// word chose a group there ("this top part"). Without a scope word a passing hand stays silent.
+export function sweepGroup(terms: Term[], tips: TipBuffer, t: number, scope: string | null): Term | null {
+  if (!scope) return null
   const singles = terms.filter(x => !groupKind(x.phrase))
   const hit: Term[] = []
   for (const p of tips.lead(t - 1000, t + 600)) {
-    const x = termAt(singles, p.x, p.y, MAX_DIST, NEST_SNAP, 0)
+    const x = termAt(singles, p.x, p.y, 0, 0, 0)
     if (x && !hit.includes(x)) hit.push(x)
   }
   if (hit.length < 2) return null
-  const holdsAll = (g: Term) => hit.every(h => boxDistance(g.box, h.box.x + h.box.w / 2, h.box.y + h.box.h / 2) <= EPS)
-  let best: Term | null = null
-  for (const g of terms) if (groupKind(g.phrase) && holdsAll(g) && (!best || g.box.w * g.box.h < best.box.w * best.box.h)) best = g
-  return best
+  const x0 = Math.min(...hit.map(h => h.box.x)), x1 = Math.max(...hit.map(h => h.box.x + h.box.w))
+  const y0 = Math.min(...hit.map(h => h.box.y)), y1 = Math.max(...hit.map(h => h.box.y + h.box.h))
+  return groupFor(terms, { x: (x0 + x1) / 2, y: (y0 + y1) / 2 }, scope)
 }
 
 // after: the words said after the pointer word in its utterance (scope words such as "top" pick a group).
@@ -200,11 +200,11 @@ export function readPointer(word: WordEvent, terms: Term[], tips: TipBuffer, whe
   // this / that / here: whisper only if the pointer (of any kind) rested on one spot around the word.
   // The pointer that counts is the one seen around the word itself (a laser put away a moment ago does not).
   const { aim, landing } = dwellRead(tips.leadAt(t, windowMs), t, windowMs)
+  const scope = scopeFrom(after)
   if (!aim) {
-    const sweep = sweepGroup(terms, tips, t)
+    const sweep = sweepGroup(terms, tips, t, scope)
     return sweep ? { ...none('not-pointing'), sweep } : none('not-pointing')
   }
-  const scope = scopeFrom(after)
   const term = (scope && groupFor(terms, aim, scope)) || termAt(terms, aim.x, aim.y, MAX_DIST, NEST_SNAP, TIE_DIST)
   return term ? { resolution: { word, terms: [term] }, aim, miss: null, landing } : { ...none('empty-space', aim), landing }
 }
