@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, fireEvent } from '@testing-library/react'
 import { FIXTURE, STAGE, mountJudge, unmountJudge } from './helpers/judgeHarness'
+import { RECHECK_MS } from '../src/core/config'
 
 afterEach(unmountJudge)
 
@@ -197,5 +198,33 @@ describe('judge screen: laser and stick detectors are off unless the link turns 
   it('a plain demo link: mouse and finger', async () => {
     const j = await mountJudge('?demo=1')
     expect(status(j)).toContain('pointers · mouse + finger')
+  })
+})
+
+describe('judge screen: a word waiting for its second look is dropped on reset and on close', () => {
+  it('Reset board during the wait: no log line appears afterwards', async () => {
+    const j = await mountJudge('?demo=1')
+    await j.key('p') // nothing pointing: waits to look once more
+    await act(async () => { fireEvent.click(j.getByRole('button', { name: 'Reset board' })) })
+    await j.wait(RECHECK_MS + 150)
+    expect(j.log()).toEqual([])
+    expect(j.fakes.play).not.toHaveBeenCalled()
+  })
+  it('closing the screen during the wait: nothing is whispered afterwards', async () => {
+    const j = await mountJudge('?demo=1')
+    j.mouseTo(0.9, 0.9)
+    await j.wait(60)
+    j.mouseTo(0.25, 0.27)
+    await j.wait(40)
+    await j.key('p') // the mouse has just landed on a term: waits
+    j.unmount()
+    await new Promise(r => setTimeout(r, RECHECK_MS + 150))
+    expect(j.fakes.play).not.toHaveBeenCalled()
+  })
+  it('without a reset the same press does produce its line (the wait itself works)', async () => {
+    const j = await mountJudge('?demo=1')
+    await j.key('p')
+    await j.wait(RECHECK_MS + 150)
+    expect(j.log()).toEqual(['this → silent'])
   })
 })

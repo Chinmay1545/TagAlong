@@ -258,6 +258,7 @@ export function JudgeScreen() {
   // Reset button: drop every box and the highlight; live mode re-reads the board on the next tick.
   const resetBoard = () => {
     resolvedRef.current = []
+    liveRef.current.cancelWaiting()
     if (boardLoopRef.current) boardLoopRef.current.reset()
     else setTerms([])
   }
@@ -473,7 +474,7 @@ export function JudgeScreen() {
     }
   }, [])
 
-  const stopSpeech = () => { stopSpeechRef.current?.(); stopSpeechRef.current = null }
+  const stopSpeech = () => { stopSpeechRef.current?.(); stopSpeechRef.current = null; liveRef.current.cancelWaiting() }
   useEffect(() => stopSpeech, [])
 
   const toggleListen = () => {

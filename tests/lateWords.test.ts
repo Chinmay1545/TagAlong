@@ -28,11 +28,12 @@ function setup(points: AnyPoint[], now: number, opts: { pending?: Box | null; te
     getPendingRegion: () => opts.pending ?? null, later: (fn, ms) => { timers.push({ fn, ms }) },
   })
   const got: string[][] = []
-  live.onResolution(r => got.push(r.terms.map(t => t.phrase)))
+  const words: string[] = []
+  live.onResolution(r => { got.push(r.terms.map(t => t.phrase)); words.push(r.word.word) })
   let seg = 0
   const item = (word: string): WordItem[] => [{ content: word, isPartial: false, arrivedAt: clock, segment: ++seg }]
   return {
-    live, got, play, timers,
+    live, got, words, play, timers,
     browserSpeech: (word: string) => live.handleItems(item(word), null, true), // said a moment ago, arrives now
     pKey: (word = 'this') => live.handleItems(item(word), null), // happens right now
     transcribe: (word: string, saidAtSec: number) => live.handleItems([{ content: word, startTime: saidAtSec, isPartial: false, arrivedAt: clock, segment: ++seg }], 0),
@@ -42,6 +43,8 @@ function setup(points: AnyPoint[], now: number, opts: { pending?: Box | null; te
       clock += ms
       timers.splice(0).forEach(t => t.fn())
     },
+    // Time passes and more points arrive, but a waiting recheck has not run yet.
+    wait: (ms: number, more: AnyPoint[] = []) => { inOrder(more).forEach(p => tips.push(p)); clock += ms },
     setTerms: (t: Term[]) => { terms = t },
   }
 }
@@ -89,6 +92,7 @@ describe('browser speech: the word arrives after it was said', () => {
     const s = setup(inOrder(rest('finger', c1.x, c1.y, 0, 700), move('finger', c1, c3, 733, 870), rest('finger', c3.x, c3.y, 900, 1000)), 1000)
     s.browserSpeech('this')
     expect(s.got).toEqual([names(T1)])
+    expect(s.timers).toEqual([]) // the finger landing on the next term now is not what the word was about
   })
   it('"these" swept just before the word arrived still finds both terms', () => {
     const s = setup(inOrder(move('finger', { x: 0.2, y: 0.285 }, { x: 0.7, y: 0.285 }, 0, 700), move('finger', { x: 0.7, y: 0.285 }, away, 733, 1300)), 1300, { terms: [T1, G] })
@@ -196,6 +200,127 @@ describe('the finger is only just arriving: wait a moment and look again', () =>
     s.pKey('that')
     s.pass(RECHECK_MS, staying)
     expect(s.got).toEqual([names(T1), names(T1)])
+  })
+})
+
+// Review finding: the teacher rests on one term, moves to the next and says "this" as the finger lands.
+// The new rest is still too short, the old one qualifies, and the old term was whispered.
+describe('the finger is landing on a new term while an older rest exists', () => {
+  // On the top 2x until 0.7 s, travelling, then on the bottom 2x from 0.95 s. The word comes at 1.0 s.
+  const landing = inOrder(rest('finger', c1.x, c1.y, 0, 700), move('finger', c1, c3, 733, 930), rest('finger', c3.x, c3.y, 950, 1000))
+
+  it('waits for the landing and whispers the new term, not the old one', () => {
+    const s = setup(landing, 1000)
+    s.pKey()
+    expect(s.got).toEqual([])
+    expect(s.timers.map(t => t.ms)).toEqual([RECHECK_MS])
+    s.pass(RECHECK_MS, rest('finger', c3.x, c3.y, 1033, 1300))
+    expect(s.got).toEqual([names(T3)])
+    expect(s.play).toHaveBeenCalledTimes(1)
+  })
+  it('the finger does not stay on the new term after all: the old term, once', () => {
+    const s = setup(landing, 1000)
+    s.pKey()
+    s.pass(RECHECK_MS, move('finger', c3, away, 1033, 1300))
+    expect(s.got).toEqual([names(T1)])
+    expect(s.timers).toEqual([])
+  })
+  it('the finger left the term fast and is not landing anywhere: whispered at once, no waiting', () => {
+    const s = setup(inOrder(rest('finger', c1.x, c1.y, 0, 850), move('finger', c1, away, 883, 1000)), 1000)
+    s.pKey()
+    expect(s.got).toEqual([names(T1)])
+    expect(s.timers).toEqual([])
+  })
+  it('still resting on the term: whispered at once, no waiting', () => {
+    const s = setup(rest('finger', c1.x, c1.y, 0, 1000), 1000)
+    s.pKey()
+    expect(s.got).toEqual([names(T1)])
+    expect(s.timers).toEqual([])
+  })
+  it('landing on empty board after a rest on a term: waits, then goes with where the finger now rests (silent)', () => {
+    const spot = { x: 0.1, y: 0.9 }
+    const s = setup(inOrder(rest('finger', c1.x, c1.y, 0, 700), move('finger', c1, spot, 733, 930), rest('finger', spot.x, spot.y, 950, 1000)), 1000)
+    s.pKey()
+    expect(s.got).toEqual([])
+    s.pass(RECHECK_MS, rest('finger', spot.x, spot.y, 1033, 1300))
+    expect(s.got).toEqual([[]])
+  })
+  it('works for a laser landing on a new term too', () => {
+    const track = inOrder(rest('laser', c1.x, c1.y, 0, 700, 0.004), move('laser', c1, c3, 733, 930), rest('laser', c3.x, c3.y, 950, 1000, 0.004))
+    const s = setup(track, 1000)
+    s.pKey()
+    s.pass(RECHECK_MS, rest('laser', c3.x, c3.y, 1033, 1300, 0.004))
+    expect(s.got).toEqual([names(T3)])
+  })
+  it('readPointer reports the landing', () => {
+    const fill = (pts: AnyPoint[]) => { const b = new TipBuffer(); inOrder(pts).forEach(p => b.push(p)); return b }
+    const word = { word: 'this', t: 1000, isPointer: true }
+    const read = readPointer(word, BOARD_TERMS, fill(landing))
+    expect(read.resolution.terms).toEqual([T1])
+    expect(read.landing).toBe(true)
+    expect(readPointer(word, BOARD_TERMS, fill(rest('finger', c1.x, c1.y, 0, 1000))).landing).toBe(false)
+    expect(readPointer(word, BOARD_TERMS, fill(inOrder(rest('finger', c1.x, c1.y, 0, 850), move('finger', c1, away, 883, 1000)))).landing).toBe(false)
+  })
+})
+
+// Review finding: the wait was a bare timer. It fired after a reset or a stop, and a later word could
+// overtake the waiting one.
+describe('words that are waiting for a second look', () => {
+  const arriving = inOrder(move('finger', away, c1, 500, 930), rest('finger', c1.x, c1.y, 950, 1000))
+  const staying = (t0: number, t1: number) => rest('finger', c1.x, c1.y, t0, t1)
+
+  it('a later word does not overtake a waiting one: they come out in the order they were said', () => {
+    const s = setup(arriving, 1000)
+    s.pKey('this') // waits: the finger has only just landed
+    s.wait(250, staying(1033, 1250))
+    s.pKey('that') // by now the finger has rested: this one could be answered at once
+    expect(s.got).toEqual([])
+    s.pass(50, staying(1283, 1300))
+    expect(s.words).toEqual(['this', 'that'])
+    expect(s.got).toEqual([names(T1), names(T1)])
+  })
+  it('three words in a row keep their order', () => {
+    const s = setup(arriving, 1000)
+    s.pKey('this')
+    s.wait(100, staying(1033, 1100))
+    s.pKey('that')
+    s.wait(100, staying(1133, 1200))
+    s.pKey('here')
+    s.pass(100, staying(1233, 1300))
+    s.pass(RECHECK_MS, staying(1333, 1600)) // in case one of the later words needed its own second look
+    expect(s.words).toEqual(['this', 'that', 'here'])
+  })
+  it('cancelWaiting drops a waiting word: no whisper and no log line afterwards', () => {
+    const s = setup(arriving, 1000)
+    s.pKey()
+    s.live.cancelWaiting()
+    s.pass(RECHECK_MS, staying(1033, 1300))
+    expect(s.got).toEqual([])
+    expect(s.play).not.toHaveBeenCalled()
+  })
+  it('cancelWaiting also drops the words queued behind it', () => {
+    const s = setup(arriving, 1000)
+    s.pKey('this')
+    s.wait(250, staying(1033, 1250))
+    s.pKey('that')
+    s.live.cancelWaiting()
+    s.pass(50, staying(1283, 1300))
+    expect(s.got).toEqual([])
+  })
+  it('after cancelWaiting, new words work as normal', () => {
+    const s = setup(arriving, 1000)
+    s.pKey('this')
+    s.live.cancelWaiting()
+    s.pass(RECHECK_MS, staying(1033, 1300))
+    s.pKey('that')
+    expect(s.words).toEqual(['that'])
+    expect(s.got).toEqual([names(T1)])
+  })
+  it('cancelWaiting with nothing waiting does nothing', () => {
+    const s = setup(rest('finger', c1.x, c1.y, 0, 1000), 1000)
+    s.live.cancelWaiting()
+    s.pKey()
+    expect(s.got).toEqual([names(T1)])
   })
 })
 

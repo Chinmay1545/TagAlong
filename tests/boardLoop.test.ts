@@ -3,7 +3,7 @@ import { shouldReadBoard, startBoardLoop } from '../src/board/boardLoop'
 import { isFixtureMode, loadFixture, readBoard } from '../src/board/boardClient'
 import { TipBuffer } from '../src/core/tipBuffer'
 import type { Term } from '../src/core/types'
-import { BOARD_INTERVAL_MS, SETTLE_MS } from '../src/core/config'
+import { BOARD_INTERVAL_MS, IDLE_REREAD_MS, SETTLE_MS } from '../src/core/config'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -393,8 +393,12 @@ describe('board loop: a laser dot is not ink (pointer masking)', () => {
     h.replies.push(fraction)
     await h.tick()
     h.cam.paint = dotAt(40, 20)
-    await vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS * 3)
+    await vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS) // seen, not settled yet
     expect(h.pending()).not.toBeNull()
+    const reads = h.reads()
+    h.replies.push(fraction)
+    await vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS * 3) // real change: once settled, it is read
+    expect(h.reads()).toBe(reads + 1)
     h.stop()
   })
 
@@ -437,6 +441,59 @@ describe('board loop: a laser dot is not ink (pointer masking)', () => {
     await h.tick()
     expect(h.reads()).toBe(2)
     clearInterval(id)
+    h.stop()
+  })
+})
+
+describe('board loop: small writing on a board that was already read', () => {
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
+  const twoMarks = (rgba: Uint8ClampedArray) => { // "x = 5" left and "x = 6" right: a few dark cells each
+    for (const [x, y] of [[8, 10], [9, 10], [8, 11], [50, 10], [51, 10], [51, 11]]) rgba.fill(30, (y * 64 + x) * 4, (y * 64 + x) * 4 + 3)
+  }
+  const xs: Term[] = [
+    { id: 1, latex: 'x', phrase: 'the x on the left', box: { x: 0.12, y: 0.27, w: 0.04, h: 0.06 } },
+    { id: 2, latex: 'x', phrase: 'the x on the right', box: { x: 0.78, y: 0.27, w: 0.04, h: 0.06 } },
+  ]
+
+  it('reads the board again when a few small terms are written', async () => {
+    const h = harness()
+    h.cam.scene = 220
+    h.replies.push(xs.slice(0, 0), [], xs) // blank board read twice (cleared), then the writing
+    await h.tick()
+    await h.tick()
+    expect(h.reads()).toBe(2)
+    h.cam.paint = twoMarks
+    await h.tick()
+    expect(h.reads()).toBe(3)
+    expect(h.shown.at(-1)).toHaveLength(2)
+    h.stop()
+  })
+
+  it('after one empty read, confirms with a second read even if the picture did not change again', async () => {
+    const h = harness()
+    h.cam.scene = 220
+    h.replies.push(xs) // the board had two terms
+    await h.tick()
+    h.cam.scene = 90 // the teacher steps in front of the board: a big change, read comes back empty
+    h.replies.push([])
+    await h.tick()
+    const readsAfterEmpty = h.reads()
+    h.cam.scene = 220 // teacher steps away; only a tiny mark (2 cells, below the change rule) differs from the last good read
+    h.cam.paint = (rgba: Uint8ClampedArray) => { for (const i of [10 * 64 + 8, 10 * 64 + 9]) rgba.fill(30, i * 4, i * 4 + 3) }
+    h.replies.push(xs)
+    await h.tick()
+    expect(h.reads()).toBe(readsAfterEmpty + 1)
+    h.stop()
+  })
+
+  it('reads again after a long quiet spell even if no change was seen (safety net)', async () => {
+    const h = harness()
+    h.cam.scene = 220
+    h.replies.push(xs, xs) // the idle re-read sees the same board
+    await h.tick()
+    const reads = h.reads()
+    await vi.advanceTimersByTimeAsync(IDLE_REREAD_MS + BOARD_INTERVAL_MS)
+    expect(h.reads()).toBe(reads + 1)
     h.stop()
   })
 })
