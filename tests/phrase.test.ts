@@ -70,10 +70,17 @@ describe('phraseFor', () => {
   it('speaks the demo board math naturally', () => {
     const say = (l: string) => phraseFor(l, on)
     expect(say('(x + 3)')).toBe('x plus 3')
-    expect(say('2x(x+3)')).toBe('2x times x plus 3')
-    expect(say('2(x+3)')).toBe('2 times x plus 3')
-    expect(say('\\frac{2x(x+3)}{2x}')).toBe('2x times x plus 3, over 2x')
+    expect(say('2x(x+3)')).toBe('2x times the quantity x plus 3')
+    expect(say('2(x+3)')).toBe('2 times the quantity x plus 3')
+    expect(say('\\frac{2x(x+3)}{2x}')).toBe('2x times the quantity x plus 3, over 2x')
     expect(say('3x + 5')).toBe('3x plus 5')
+    expect(say('(x - 4)')).toBe('x minus 4')
+    expect(say('3(x - 4) + 5')).toBe('3 times the quantity x minus 4, plus 5')
+    expect(say('(x - 3)(x + 3)')).toBe('the quantity x minus 3, times the quantity x plus 3')
+    expect(say('(x + 2)(x + 3)')).toBe('the quantity x plus 2, times the quantity x plus 3')
+    expect(say('2x(x + 3)')).toBe('2x times the quantity x plus 3')
+    expect(phraseFor('\\frac{x^2-9}{x^2+5x+6} = \\frac{(x-3)(x+3)}{(x+2)(x+3)}', on, 'equation')).toBe(
+      'the equation: x squared minus 9, over x squared plus 5x plus 6, equals the quantity x minus 3, times the quantity x plus 3, over the quantity x plus 2, times the quantity x plus 3')
     expect(say('20')).toBe('20')
     expect(say('3x + 5 = 20')).toBe('3x plus 5 equals 20')
     expect(say('x^2')).toBe('x squared')
@@ -95,7 +102,7 @@ describe('phraseFor', () => {
     const terms: Term[] = JSON.parse(readFileSync('public/fixtures/board-fraction.json', 'utf8')).terms
     expect(terms.map(t => t.phrase)).toEqual([
       '2x, in the top', 'x plus 3, in the top', '2x, in the bottom',
-      'the top: 2x times x plus 3', 'the bottom: 2x', 'the fraction: 2x times x plus 3, over 2x',
+      'the top: 2x times the quantity x plus 3', 'the bottom: 2x', 'the fraction: 2x times the quantity x plus 3, over 2x',
     ])
     expect(phraseFor(terms[1].latex, terms[1].box, 'top')).toBe(terms[1].phrase)
     const inside = (g: Term, q: Term) => q.box.x >= g.box.x - 1e-9 && q.box.y >= g.box.y - 1e-9 && q.box.x + q.box.w <= g.box.x + g.box.w + 1e-9 && q.box.y + q.box.h <= g.box.y + g.box.h + 1e-9

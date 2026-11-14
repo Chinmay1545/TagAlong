@@ -29,15 +29,15 @@ describe('speakMath', () => {
     ['x-y', 'x minus y'],
     ['2-x', '2 minus x'],
     ['3x^2-5x+6', '3 x squared minus 5 x plus 6'],
-    ['(x+1)(x-1)', 'x plus 1 times x minus 1'],
+    ['(x+1)(x-1)', 'the quantity x plus 1, times the quantity x minus 1'],
     ['f(x)=x²', 'f of x equals x squared'],
   ])('%s -> %s', (i, o) => expect(speakMath(i)).toBe(o))
 })
 
 describe('speakMath: factors and fractions', () => {
   it.each([
-    ['2x(x+3)', '2 x times x plus 3'],
-    ['2(x+3)', '2 times x plus 3'],
-    ['(2x * (x+3))/(2x)', '2 x times x plus 3, over 2 x'],
+    ['2x(x+3)', '2 x times the quantity x plus 3'],
+    ['2(x+3)', '2 times the quantity x plus 3'],
+    ['(2x * (x+3))/(2x)', '2 x times the quantity x plus 3, over 2 x'],
   ])('%s -> %s', (i, o) => expect(speakMath(i)).toBe(o))
 })

@@ -45,6 +45,10 @@ describe('parseBoardResponse', () => {
     expect(BOARD_PROMPT).toContain('latex|tag|x|y|w|h')
     expect(BOARD_PROMPT).toContain('0 to 1000')
     expect(BOARD_PROMPT).not.toMatch(/phrase/i)
+    expect(BOARD_PROMPT).toMatch(/lowercase/)
+    expect(BOARD_PROMPT).toMatch(/inside a numerator is tagged top, not numerator/)
+    expect(BOARD_PROMPT).toContain('|lhs|')
+    expect(BOARD_PROMPT).toContain('|equation|')
     expect(BOARD_PROMPT.endsWith('reply with the single word EMPTY.')).toBe(true)
   })
   it('old JSON without a phrase gets one built from the LaTeX and position', () => {
@@ -81,7 +85,7 @@ describe('parseBoardResponse: compact line format', () => {
 describe('parseBoardResponse: tagged lines', () => {
   it('reads latex|tag|x|y|w|h and builds the contract phrase', () => {
     const r = parseBoardResponse('2x|top|237|211|95|150\n(x + 3)|top|439|211|231|153\n2x|bottom|439|560|96|149\n2x(x+3)|numerator|237|211|433|153\n\\frac{2x(x+3)}{2x}|fraction|219|211|562|498')
-    expect(r.map(t => t.phrase)).toEqual(['2x, in the top', 'x plus 3, in the top', '2x, in the bottom', 'the top: 2x times x plus 3', 'the fraction: 2x times x plus 3, over 2x'])
+    expect(r.map(t => t.phrase)).toEqual(['2x, in the top', 'x plus 3, in the top', '2x, in the bottom', 'the top: 2x times the quantity x plus 3', 'the fraction: 2x times the quantity x plus 3, over 2x'])
     expect(r[0].box).toEqual({ x: 0.237, y: 0.211, w: 0.095, h: 0.15 })
     expect(r.map(t => t.id)).toEqual([1, 2, 3, 4, 5])
   })

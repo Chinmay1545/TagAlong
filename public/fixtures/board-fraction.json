@@ -36,7 +36,7 @@
   {
    "id": 4,
    "latex": "2x(x + 3)",
-   "phrase": "the top: 2x times x plus 3",
+   "phrase": "the top: 2x times the quantity x plus 3",
    "box": {
     "x": 0.237,
     "y": 0.211,
@@ -58,7 +58,7 @@
   {
    "id": 6,
    "latex": "\\frac{2x(x + 3)}{2x}",
-   "phrase": "the fraction: 2x times x plus 3, over 2x",
+   "phrase": "the fraction: 2x times the quantity x plus 3, over 2x",
    "box": {
     "x": 0.219,
     "y": 0.211,
