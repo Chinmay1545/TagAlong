@@ -54,6 +54,7 @@ export function createWhisperPlayer(opts: Opts = {}) {
   const queue = new WhisperQueue()
   let active: Active[] = []
   let on = true
+  let silent = false // classroom mode: the whisper goes to the students' phones, this device stays quiet
 
   const clip = (p: string) => p.trim().slice(0, TTS_MAX_CHARS)
   const unlock = () => { const c = getCtx(); if (c.state === 'suspended') void c.resume() }
@@ -74,6 +75,7 @@ export function createWhisperPlayer(opts: Opts = {}) {
     unlock,
     play(r: Resolution): { startedAt: number } | null {
       if (!on || r.terms.length === 0) return null
+      if (silent) return { startedAt: nowPerf() } // delivered (to the room), nothing sounds here
       let first: number | null = null
       let c: AudioContext | null = null
       for (const t of r.terms) {
@@ -121,6 +123,7 @@ export function createWhisperPlayer(opts: Opts = {}) {
       return first === null ? null : { startedAt: first }
     },
     setEnabled(v: boolean) { on = v },
+    setSilent(v: boolean) { silent = v },
     enabled: () => on,
   }
 }

@@ -181,3 +181,26 @@ describe('createWhisperPlayer', () => {
     expect(ctx.resume).toHaveBeenCalled()
   })
 })
+
+describe('createWhisperPlayer: silent (classroom camera device)', () => {
+  it('reports the whisper as delivered but plays and speaks nothing on this device', async () => {
+    const { ctx, started } = fakeCtx()
+    const speak = vi.fn()
+    const p = createWhisperPlayer({ fetchTts: async t => new ArrayBuffer(t.length), ctx, speak, now })
+    await p.prepare([term(1, 'x squared')])
+    p.setSilent(true)
+    expect(p.play(res([term(1, 'x squared'), term(2, 'not prepared')]))).toEqual({ startedAt: 5000 })
+    expect(started).toHaveLength(0)
+    expect(speak).not.toHaveBeenCalled()
+    p.setSilent(false)
+    expect(p.play(res([term(1, 'x squared')]))).not.toBeNull()
+    expect(started).toHaveLength(1)
+  })
+
+  it('"without app" (disabled) still wins over silent: nothing is delivered', () => {
+    const p = createWhisperPlayer({ fetchTts: async () => new ArrayBuffer(1), ctx: fakeCtx().ctx, speak: vi.fn(), now })
+    p.setSilent(true)
+    p.setEnabled(false)
+    expect(p.play(res([term(1, 'x squared')]))).toBeNull()
+  })
+})

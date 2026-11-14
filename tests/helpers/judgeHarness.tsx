@@ -24,6 +24,7 @@ export async function mountJudge(search = '') {
   const fakes = {
     play: vi.fn((_r: Resolution) => (enabled ? { startedAt: performance.now() + 5 } : null)),
     setEnabled: vi.fn((on: boolean) => { enabled = on }),
+    setSilent: vi.fn((_on: boolean) => {}), // classroom mode: this device stays quiet
     startBoardLoop: vi.fn(),
     startToolTracker: vi.fn((..._a: unknown[]) => () => {}), // called with (video, onPoint, getHand, { laser, stick })
     boardReset: vi.fn(),
@@ -50,7 +51,7 @@ export async function mountJudge(search = '') {
   }))
   vi.doMock('../../src/audio/whisper', async orig => ({
     ...(await orig<object>()),
-    createWhisperPlayer: () => ({ play: fakes.play, setEnabled: fakes.setEnabled, prepare: async () => {}, unlock: () => {} }),
+    createWhisperPlayer: () => ({ play: fakes.play, setEnabled: fakes.setEnabled, setSilent: fakes.setSilent, prepare: async () => {}, unlock: () => {} }),
   }))
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 503, json: async () => ({}) })))
 

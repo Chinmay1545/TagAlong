@@ -44,3 +44,8 @@ body { margin: 0; background: var(--bg); color: var(--text); -webkit-font-smooth
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* Classroom relay: the student phone's first screen is one big button (phones need a tap before sound). */
+.room-start { display: grid; place-items: stretch; grid-template-rows: 1fr; padding: 16px; }
+.room-start-btn { width: 100%; min-height: calc(100dvh - 32px); border: 2px solid var(--accent); border-radius: 24px; background: var(--panel); color: var(--text); font: 600 clamp(28px, 8vw, 56px)/1.15 inherit; letter-spacing: -0.02em; cursor: pointer; }
+.room-start-btn:focus-visible { outline: 4px solid var(--accent); outline-offset: 4px; }

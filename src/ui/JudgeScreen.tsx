@@ -31,6 +31,8 @@ import { NotesPanel } from './NotesPanel'
 import { ModeSwitch, PointerLog, Readout, StatsStrip, type Last } from './Panels'
 import { Readiness } from './Readiness'
 import { createBroadcaster, resolutionMsg, finalMsg, boardMsg, modeMsg, subscribe, markedMsg, assistMsg, noticeMsg } from '../live/broadcast'
+import { createClassroom, type Classroom } from '../live/classroom'
+import { ClassPanel } from './ClassPanel'
 import { askScene } from '../live/assist'
 import { isClassEnding, endingNotice } from '../live/classEnding'
 import { grabJpeg } from '../vision/grabFrame'
@@ -170,6 +172,10 @@ export function JudgeScreen() {
   const bcRef = useRef<ReturnType<typeof createBroadcaster>>(null as never)
   if (!bcRef.current) bcRef.current = createBroadcaster()
   useEffect(() => () => bcRef.current.close(), [])
+  // Classroom relay: whispers and the board also go to every student phone in the open class.
+  const classRef = useRef<Classroom>(null as never)
+  if (!classRef.current) classRef.current = createClassroom()
+  useEffect(() => () => classRef.current.close(), [])
   const boardRef = useRef<Resolution | null>(null)
   const askingRef = useRef(false)
   useEffect(() => subscribe(m => {
@@ -210,6 +216,7 @@ export function JudgeScreen() {
     boardAtRef.current = performance.now()
     setTermCount(terms.length)
     prepare(terms)
+    classRef.current.board(terms)
     liveRef.current.checkHeld() // a "this" said before this box was read can be whispered now
   }
 
@@ -227,6 +234,7 @@ export function JudgeScreen() {
           termsRef.current = terms
           setTermCount(terms.length)
           prepare(terms)
+          classRef.current.board(terms) // student phones get the saved board too
         } catch (e) {
           if (!cancelled) setCamError((e as Error).message)
         }
@@ -320,6 +328,7 @@ export function JudgeScreen() {
   useEffect(() => liveRef.current.onResolution((r, ms) => {
     if (transcriptRef.current.addResolution(r)) setSegs(transcriptRef.current.segments()) // a held word joined an earlier sentence
     bcRef.current.send(resolutionMsg(r, ms, !whisperRef.current))
+    if (ms !== null) classRef.current.whisper(r) // null: "without app" or nothing resolved
     resolvedRef.current = r.terms
     const now = performance.now()
     const tip = activePointer(tipsRef.current.all(), now)
@@ -355,7 +364,7 @@ export function JudgeScreen() {
     if (!seg) return
     const meant = substitute(seg.text, seg.resolutions)
     bcRef.current.send(finalMsg(seg.text, meant))
-    if (isClassEnding(seg.text)) bcRef.current.send(noticeMsg(endingNotice(meant))) // only when it matters
+    if (isClassEnding(seg.text)) { bcRef.current.send(noticeMsg(endingNotice(meant))); classRef.current.notice(endingNotice(meant)) } // only when it matters
   }), [])
 
   const toggleWhisper = () => {
@@ -472,6 +481,7 @@ export function JudgeScreen() {
       <header className="masthead rise" style={step(0)}>
         <div className="wordmark"><span className="dot" aria-hidden="true" />THIS &amp; THAT</div>
         <div className="status mono">board · {boardAgo}<span className="status-gap" />speech · {speechLabel}<span className="status-gap" />pointers · {pointersLabel(tools, !!stage.photo)}<span className="status-gap" /><a className="student-link" href="/?student=1" target="student" onClick={e => { e.preventDefault(); window.open('/?student=1', 'student', 'popup,width=1280,height=800') }} title="Opens in its own window; keep this window visible so hand tracking keeps running">Open student view</a></div>
+        <ClassPanel classroom={classRef.current} onLiveChange={live => playerRef.current.setSilent(live)} />
       </header>
       <Readiness />
       <section className="stage-wrap">
