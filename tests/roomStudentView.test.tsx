@@ -9,10 +9,10 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
-function setup(opts: { prepare?: (t: Term[]) => Promise<void>; voiceWaitMs?: number } = {}) {
+function setup(opts: { prepare?: (t: Term[]) => Promise<void>; voiceWaitMs?: number; quietAt?: () => number } = {}) {
   let on: { onMessage(m: unknown): void; onState?(s: RoomState): void } | null = null
   const urls: string[] = []
-  const player = { unlock: vi.fn(), play: vi.fn((_r: Resolution) => ({ startedAt: 0 })), prepare: vi.fn(opts.prepare ?? (async (_t: Term[]) => {})) }
+  const player = { unlock: vi.fn(), play: vi.fn((_r: Resolution) => ({ startedAt: 0 })), prepare: vi.fn(opts.prepare ?? (async (_t: Term[]) => {})), ...(opts.quietAt ? { quietAt: opts.quietAt } : {}) }
   const awake = vi.fn(() => () => {})
   render(<RoomStudentView room="math201" token="tok" deps={{
     connect: (url, handlers) => { urls.push(url); on = handlers; return { send: () => {}, close: () => {} } },
@@ -98,6 +98,93 @@ describe('student phone (classroom relay)', () => {
     t.start()
     await t.recv({ type: 'notice', text: 'Class is ending. Homework is problem 3.' })
     expect(t.said()).toBe('Class is ending. Homework is problem 3.')
+  })
+
+  it('keeps the visual stage away from the screen reader (the whisper is heard through our audio only)', async () => {
+    const t = setup()
+    t.start()
+    expect(document.querySelector('.rs-empty')!.closest('[aria-hidden="true"]')).not.toBeNull()
+    await t.recv({ type: 'whisper', word: 'this', items: [{ phrase: 'the 6 on the right', x: 0.8 }] })
+    expect(document.querySelector('.rs-now')!.closest('[aria-hidden="true"]')).not.toBeNull()
+    expect(document.querySelector('[aria-live]')!.closest('[aria-hidden="true"]')).toBeNull()
+    expect(screen.getByRole('button', { name: /repeat/i })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /what's on the board/i })).toBeTruthy()
+  })
+
+  it('an announcement waits until the whisper audio is quiet', async () => {
+    let until = 0
+    const t = setup({ quietAt: () => until })
+    t.start()
+    await act(async () => { await sleep(5) })
+    until = performance.now() + 400
+    await t.recv({ type: 'notice', text: 'Class is ending.' })
+    expect(t.said()).not.toBe('Class is ending.')
+    await act(async () => { await sleep(250) })
+    expect(t.said()).not.toBe('Class is ending.')
+    await act(async () => { await sleep(400) })
+    expect(t.said()).toBe('Class is ending.')
+  })
+
+  it('an announcement while quiet is immediate, and a newer pending one replaces an older one', async () => {
+    let until = 0
+    const t = setup({ quietAt: () => until })
+    t.start()
+    await t.recv({ type: 'notice', text: 'Right away.' })
+    expect(t.said()).toBe('Right away.')
+    until = performance.now() + 400
+    await t.recv({ type: 'notice', text: 'First.' })
+    await t.recv({ type: 'notice', text: 'Second.' })
+    await act(async () => { await sleep(700) })
+    expect(t.said()).toBe('Second.')
+  })
+
+  it('reads the overview, not the pieces, and shows it', async () => {
+    const t = setup()
+    t.start()
+    await t.recv({ type: 'board', phrases: ['2x, in the top', '2x, in the bottom'], overview: ['the fraction: 2x, over 2x'] })
+    expect(t.player.prepare.mock.calls[0][0].map(x => x.phrase)).toEqual(['the fraction: 2x, over 2x'])
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /what's on the board/i })); await sleep(5) })
+    const [r, o] = t.player.play.mock.calls.at(-1) as unknown as [Resolution, { soft?: boolean }]
+    expect(r.terms.map(x => x.phrase)).toEqual(['the fraction: 2x, over 2x'])
+    expect(o).toEqual({ soft: true })
+    expect(screen.getByText('On the board')).toBeTruthy()
+    expect(screen.getByText('the fraction: 2x, over 2x')).toBeTruthy()
+  })
+
+  it('a live whisper replaces an overview that has not started yet, and is played plainly', async () => {
+    const t = setup({ voiceWaitMs: 60, prepare: async () => { await sleep(30) } })
+    t.start()
+    await t.recv({ type: 'board', phrases: ['a'], overview: ['the equation: a'] })
+    fireEvent.click(screen.getByRole('button', { name: /what's on the board/i }))
+    await t.recv({ type: 'whisper', word: 'this', items: [{ phrase: 'the 6 on the right', x: 0.8 }] })
+    await act(async () => { await sleep(150) })
+    expect(t.player.play).toHaveBeenCalledTimes(1)
+    expect(t.player.play.mock.calls[0][0].terms[0].phrase).toBe('the 6 on the right')
+    expect((t.player.play.mock.calls[0] as unknown[])[1]).toBeUndefined()
+  })
+
+  it('an announcement waits while a whisper is still waiting for its voice', async () => {
+    const t = setup({ voiceWaitMs: 300, prepare: () => new Promise<void>(() => {}) })
+    t.start()
+    await t.recv({ type: 'whisper', word: 'this', items: [{ phrase: 'the 6 on the right', x: 0.8 }] })
+    await t.recv({ type: 'notice', text: 'Class is ending.' })
+    expect(t.said()).not.toBe('Class is ending.')
+    expect(t.player.play).not.toHaveBeenCalled()
+    await act(async () => { await sleep(500) })
+    expect(t.player.play).toHaveBeenCalledTimes(1)
+    expect(t.said()).toBe('Class is ending.')
+  })
+
+  it('a stale overview does not hold a whisper back while it waits for its voice', async () => {
+    const t = setup({ voiceWaitMs: 400, prepare: (ts: Term[]) => (ts[0].phrase.startsWith('the equation') ? new Promise<void>(() => {}) : Promise.resolve()) })
+    t.start()
+    await t.recv({ type: 'board', phrases: ['a'], overview: ['the equation: a'] })
+    fireEvent.click(screen.getByRole('button', { name: /what's on the board/i }))
+    await act(async () => { await sleep(20) }) // the overview now waits for its voice
+    await t.recv({ type: 'whisper', word: 'this', items: [{ phrase: 'the 6 on the right', x: 0.8 }] })
+    await act(async () => { await sleep(60) })
+    expect(t.player.play).toHaveBeenCalledTimes(1)
+    expect(t.player.play.mock.calls[0][0].terms[0].phrase).toBe('the 6 on the right')
   })
 
   it('has no buttons that talk back to the teacher (one way only)', () => {

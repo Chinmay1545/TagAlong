@@ -14,7 +14,7 @@ export const MAX_NOTICE = 300
 export type WhisperItem = { phrase: string; x: number } // x: horizontal centre 0..1, for left/right panning
 export type CameraMsg =
   | { type: 'whisper'; word: string; items: WhisperItem[] }
-  | { type: 'board'; phrases: string[] } // reading order; the latest one is kept for students who join late
+  | { type: 'board'; phrases: string[]; overview?: string[] } // reading order; the latest one is kept for students who join late. overview: the top-level items only (old cameras omit it)
   | { type: 'notice'; text: string } // an alert worth hearing ("class is ending")
   | { type: 'status'; open: boolean } // class opened / closed by the camera device
 export type ServerToStudent =
@@ -43,9 +43,12 @@ export function parseCameraMsg(raw: string): CameraMsg | null {
       }
       return { type: 'whisper', word: o.word, items }
     }
-    case 'board':
-      if (!Array.isArray(o.phrases) || o.phrases.length > MAX_BOARD_PHRASES || !o.phrases.every(p => str(p, MAX_PHRASE))) return null
-      return { type: 'board', phrases: [...o.phrases] as string[] }
+    case 'board': {
+      const list = (v: unknown) => Array.isArray(v) && v.length <= MAX_BOARD_PHRASES && v.every(p => str(p, MAX_PHRASE))
+      if (!list(o.phrases) || (o.overview !== undefined && !list(o.overview))) return null
+      const phrases = [...(o.phrases as string[])]
+      return o.overview === undefined ? { type: 'board', phrases } : { type: 'board', phrases, overview: [...(o.overview as string[])] }
+    }
     case 'notice':
       return str(o.text, MAX_NOTICE) ? { type: 'notice', text: o.text } : null
     case 'status':
