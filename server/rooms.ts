@@ -28,9 +28,13 @@ const parse = (raw: string): Record<string, unknown> | undefined => {
   } catch { return undefined }
 }
 
-export function createHub(opts: { rateMax?: number; rateWindowMs?: number; now?: () => number } = {}): Hub {
-  const { rateMax = 6, rateWindowMs = 20000, now = Date.now } = opts
-  const teachers = new Map<string, { name: string; s: Sock }>()
+// A laptop that drops (Wi-Fi blip) gets this long to come back before phones hear the class ended.
+export const TEACHER_GRACE_MS = 10000
+
+export function createHub(opts: { rateMax?: number; rateWindowMs?: number; now?: () => number; graceMs?: number } = {}): Hub {
+  const { rateMax = 6, rateWindowMs = 20000, now = Date.now, graceMs = TEACHER_GRACE_MS } = opts
+  // s is null while the laptop is away inside its grace period: the class stays live for the phones.
+  const teachers = new Map<string, { name: string; s: Sock | null; gone?: ReturnType<typeof setTimeout> }>()
   const students = new Map<Sock, Student>()
   const send = (s: Sock, m: unknown) => { try { s.send(JSON.stringify(m)) } catch { /* dead socket: its close event removes it */ } }
 
@@ -44,16 +48,17 @@ export function createHub(opts: { rateMax?: number; rateWindowMs?: number; now?:
   const inRoom = (room: string) => [...students].filter(([, st]) => st.joined === room)
   const tellTeacher = (room: string) => {
     const t = teachers.get(room)
-    if (t) send(t.s, { type: 'listeners', count: inRoom(room).length })
+    if (t?.s) send(t.s, { type: 'listeners', count: inRoom(room).length })
   }
   const roomOf = (s: Sock) => [...teachers].find(([, t]) => t.s === s)?.[0]
 
   return {
     addTeacher(room, name, s) {
       const old = teachers.get(room)
+      if (old?.gone) clearTimeout(old.gone)
       teachers.set(room, { name, s }) // set first so old's late close event cannot evict the new one
-      if (old && old.s !== s) try { old.s.close(REPLACED) } catch { /* already dead */ }
-      tellStudents(room)
+      if (old?.s && old.s !== s) try { old.s.close(REPLACED) } catch { /* already dead */ }
+      if (!old || old.s) tellStudents(room) // back within the grace period: phones never saw it leave
       tellTeacher(room)
     },
 
@@ -67,8 +72,12 @@ export function createHub(opts: { rateMax?: number; rateWindowMs?: number; now?:
     remove(s) {
       const room = roomOf(s)
       if (room) {
-        teachers.delete(room)
-        tellStudents(room)
+        const end = () => { teachers.delete(room); tellStudents(room) }
+        if (graceMs <= 0) return end()
+        const t = teachers.get(room)!
+        t.s = null
+        t.gone = setTimeout(end, graceMs)
+        ;(t.gone as { unref?: () => void }).unref?.()
         return
       }
       const st = students.get(s)
@@ -104,7 +113,7 @@ export function createHub(opts: { rateMax?: number; rateWindowMs?: number; now?:
       if (st.hits.length >= rateMax) return
       st.hits.push(t)
       const teacher = teachers.get(st.joined)
-      if (teacher) send(teacher.s, { ...m, from: st.sid })
+      if (teacher?.s) send(teacher.s, { ...m, from: st.sid })
     },
   }
 }

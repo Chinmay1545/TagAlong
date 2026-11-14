@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { createHub, roomToken, TOKEN_RE, type Sock } from '../server/rooms'
 
 type Msg = Record<string, unknown>
@@ -34,7 +34,7 @@ describe('hub', () => {
   })
 
   it('notifies watching students when a teacher arrives and when it leaves', () => {
-    const h = createHub(), t = sock(), s = sock()
+    const h = createHub({ graceMs: 0 }), t = sock(), s = sock()
     h.addStudent(s, [A])
     expect(last(s)).toEqual({ type: 'rooms', live: [], names: {} })
     h.addTeacher(A, 'Math 201', t)
@@ -163,5 +163,47 @@ describe('hub', () => {
     h.addTeacher(A, 'Math', old); h.addStudent(s, [A])
     expect(() => h.addTeacher(A, 'Math', fresh)).not.toThrow()
     expect(last(s)).toEqual({ type: 'rooms', live: [A], names: { [A]: 'Math' } })
+  })
+})
+
+describe('teacher drops for a moment (Wi-Fi blip)', () => {
+  afterEach(() => { vi.useRealTimers() })
+  const setup = () => {
+    vi.useFakeTimers()
+    const h = createHub(), t = sock(), s = sock()
+    h.addTeacher(A, 'Math 201', t)
+    h.addStudent(s, [A]); say(h, s, { type: 'join', room: A })
+    return { h, t, s }
+  }
+
+  it('phones hear nothing if the laptop is back within 10 seconds', () => {
+    const { h, t, s } = setup()
+    const before = s.got.length
+    h.remove(t)
+    vi.advanceTimersByTime(9000)
+    const t2 = sock()
+    h.addTeacher(A, 'Math 201', t2)
+    vi.advanceTimersByTime(60000)
+    expect(s.got.slice(before)).toEqual([]) // no "class ended", no "started"
+    expect(last(t2)).toEqual({ type: 'listeners', count: 1 }) // still joined
+    h.fromTeacher(t2, JSON.stringify({ type: 'notice', text: 'hi' }))
+    expect(last(s)).toEqual({ type: 'notice', text: 'hi' })
+  })
+
+  it('the class ends for phones only after 10 seconds without the laptop', () => {
+    const { h, t, s } = setup()
+    h.remove(t)
+    vi.advanceTimersByTime(9999)
+    expect(last(s)).not.toEqual({ type: 'rooms', live: [], names: {} })
+    vi.advanceTimersByTime(1)
+    expect(last(s)).toEqual({ type: 'rooms', live: [], names: {} })
+  })
+
+  it('a phone that connects during the gap still sees the class as live', () => {
+    const { h, t } = setup()
+    h.remove(t)
+    const s2 = sock()
+    h.addStudent(s2, [A])
+    expect(last(s2)).toEqual({ type: 'rooms', live: [A], names: { [A]: 'Math 201' } })
   })
 })
