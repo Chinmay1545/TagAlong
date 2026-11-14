@@ -4,12 +4,8 @@ dist
 *.zip
 .superpowers
 docs/
-HANDOFF.md
-PROMPT.md
-START_HERE.md
-TEAM.md
-README.md
 *.md
 public/models/README.txt
 public/fixtures/PUT_BOARD_PHOTO_HERE.txt
 *.txt
+!README.md
