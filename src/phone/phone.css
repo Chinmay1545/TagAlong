@@ -1,0 +1,168 @@
+/* The student phone (course link and ?classes home): one calm dark sheet, one emerald accent, type that reads
+   from across a desk. Every rule is scoped under .rs so the same-device student tab keeps its own look. */
+.rs {
+  --bg: #09090b;
+  --panel: #111113;
+  --raise: #18181b;
+  --press: #202024;
+  --line: #27272a;
+  --line-2: #3f3f46;
+  --line-3: #71717a;
+  --text: #f4f4f5;
+  --muted: #a1a1aa;
+  --dim: #8e8e96;
+  --accent: #3fb98a;
+  --accent-soft: rgba(63, 185, 138, 0.1);
+  --accent-press: rgba(63, 185, 138, 0.18);
+  --accent-edge: rgba(63, 185, 138, 0.45);
+  --spring: cubic-bezier(0.16, 1, 0.3, 1);
+  --mono: 'Geist Mono', ui-monospace, monospace;
+  --safe-t: max(20px, env(safe-area-inset-top));
+  --safe-r: max(20px, env(safe-area-inset-right));
+  --safe-b: max(20px, env(safe-area-inset-bottom));
+  --safe-l: max(20px, env(safe-area-inset-left));
+  position: relative; display: flex; flex-direction: column; gap: 16px;
+  width: 100%; max-width: 640px; min-height: 100dvh; margin: 0 auto; overflow: clip;
+  padding: var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l);
+  font-family: 'Geist', system-ui, sans-serif; color: var(--text); background: var(--bg);
+  -webkit-tap-highlight-color: transparent;
+}
+.rs > * { min-width: 0; }
+/* Film grain: one fixed layer that never scrolls. */
+.rs::after {
+  content: ''; position: fixed; inset: 0; z-index: 2; pointer-events: none; opacity: 0.04; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.rs :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* ---------- decoration (always aria-hidden) ---------- */
+.rs-decor { position: absolute; inset: 0; display: flex; flex-direction: column; padding: var(--safe-t) var(--safe-r) var(--safe-b) calc(var(--safe-l) + 4px); pointer-events: none; }
+.rs-kicker { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 12px; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text); animation: rs-fade 0.8s var(--spring) both; }
+.rs-count { margin-left: auto; color: var(--dim); }
+.rs-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--accent); animation: rs-pulse 2.4s ease-in-out infinite; }
+.rs-hint { margin-top: auto; max-width: 30ch; font-size: 16px; line-height: 1.5; color: var(--muted); animation: rs-rise 0.8s var(--spring) 200ms both; }
+/* The beacon: an accent core, a breathing ring, and a wider, slower ring out of step for depth. */
+.rs-orb { position: absolute; top: 34%; left: calc(var(--safe-l) + 84px); width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 6px var(--accent-soft); animation: rs-fade 1.2s var(--spring) both; }
+.rs-orb::before, .rs-orb::after { content: ''; position: absolute; left: 50%; top: 50%; border-radius: 50%; }
+.rs-orb::before { width: 104px; height: 104px; margin: -52px 0 0 -52px; border: 1px solid var(--accent-edge); animation: rs-breathe 3.2s ease-in-out infinite; }
+.rs-orb::after { width: 200px; height: 200px; margin: -100px 0 0 -100px; border: 1px solid var(--accent-edge); background: radial-gradient(circle, var(--accent-soft), transparent 70%); animation: rs-drift 6.4s ease-in-out -2.1s infinite; }
+
+/* ---------- start: the whole screen is the button ---------- */
+.rs-start { padding: 0; }
+.rs-start-btn {
+  flex: 1; min-height: 100dvh; width: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-start;
+  margin: 0; padding: var(--safe-t) var(--safe-r) calc(var(--safe-b) + 96px) calc(var(--safe-l) + 4px);
+  border: 0; border-radius: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer;
+  font: inherit; font-size: clamp(44px, 13vw, 76px); font-weight: 600; letter-spacing: -0.045em; line-height: 0.98;
+  touch-action: manipulation; user-select: none; -webkit-user-select: none; transform-origin: left bottom;
+  transition: transform 0.35s var(--spring); animation: rs-rise 0.8s var(--spring) 90ms both;
+}
+.rs-start-btn:active { transform: scale(0.98); transition-duration: 0.12s; }
+.rs-start-btn:focus-visible { outline-offset: -8px; border-radius: 28px; }
+.rs-to { display: block; margin-top: 6px; color: var(--accent); overflow-wrap: anywhere; }
+
+/* ---------- live: top bar ---------- */
+.rs-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; animation: rs-fade 0.6s var(--spring) both; }
+.rs-chip {
+  display: inline-flex; align-items: center; gap: 10px; min-width: 0; padding: 8px 14px 8px 12px;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--panel); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  font-family: var(--mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rs-state { flex: none; font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.rs-live[data-state='live'] .rs-state { color: var(--accent); }
+.rs-live:not([data-state='live']) .rs-chip { color: var(--muted); }
+.rs-live:not([data-state='live']) .rs-chip .rs-dot { background: var(--dim); opacity: 0.6; animation: none; }
+
+/* A slow light passes through the banner while the phone looks for the class again. */
+.rs-banner {
+  position: relative; overflow: hidden; display: flex; align-items: center; gap: 10px; padding: 14px 16px;
+  border: 1px solid var(--line-2); border-radius: 16px; background: var(--panel); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  font-size: 15px; color: var(--text); animation: rs-rise 0.5s var(--spring) both;
+}
+.rs-banner::before { content: ''; width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--dim); animation: rs-pulse 1.2s ease-in-out infinite; }
+.rs-banner::after { content: ''; position: absolute; inset: 0; width: 60%; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent); transform: translateX(-100%); animation: rs-shimmer 2.4s ease-in-out infinite; }
+
+/* ---------- live: stage ---------- */
+.rs-stage { position: relative; flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 16px; padding: 32px 0 20px; }
+/* Before the first whisper the beacon stays on screen, so the wait reads as calm, not broken. */
+.rs-stage:has(.rs-empty)::before, .rs-stage:has(.rs-empty)::after { content: ''; position: absolute; top: 30%; left: 64px; border-radius: 50%; pointer-events: none; }
+.rs-stage:has(.rs-empty)::before { width: 12px; height: 12px; margin: -6px 0 0 -6px; background: var(--accent); box-shadow: 0 0 0 6px var(--accent-soft); }
+.rs-stage:has(.rs-empty)::after { width: 104px; height: 104px; margin: -52px 0 0 -52px; border: 1px solid var(--accent-edge); animation: rs-breathe 3.2s ease-in-out infinite; }
+.rs-live[data-state='wait'] .rs-stage::after { animation: rs-ripple 2.4s var(--spring) infinite; }
+.rs-live[data-state='drop'] .rs-stage::before { background: var(--dim); box-shadow: 0 0 0 6px rgba(142, 142, 150, 0.12); }
+.rs-live[data-state='drop'] .rs-stage::after { border-color: var(--line-2); animation: rs-ripple 3.2s var(--spring) infinite; }
+.rs-empty { margin: 0; max-width: 16ch; font-size: clamp(30px, 8.5vw, 44px); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: var(--muted); animation: rs-rise 0.7s var(--spring) both, rs-idle 4.8s ease-in-out 0.7s infinite; }
+
+/* The current whisper: the word that was said, a sweeping accent bar, then the phrase word by word. */
+.rs-now { display: flex; flex-direction: column; gap: 20px; }
+.rs-word { display: flex; align-items: center; gap: 12px; font-family: var(--mono); font-size: 13px; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); animation: rs-fade 0.5s var(--spring) both; }
+.rs-word::before { content: ''; width: 48px; height: 3px; border-radius: 2px; background: var(--accent); transform-origin: left; animation: rs-sweep 2.2s var(--spring) both; }
+/* The real text is one plain node (read by the screen reader, sized here but see-through); the aria-hidden
+   per-word copy sits exactly on top and is what the eye sees. */
+.rs-phrase { position: relative; margin: 0; font-size: clamp(40px, 11.5vw, 92px); font-weight: 600; line-height: 1.02; letter-spacing: -0.04em; color: transparent; overflow-wrap: anywhere; }
+.rs-words { position: absolute; inset: 0; color: var(--text); }
+.rs-words > span { display: inline-block; max-width: 100%; animation: rs-word 0.7s var(--spring) both; animation-delay: calc(var(--i, 0) * 45ms + 80ms); }
+
+/* ---------- buttons ---------- */
+.rs-actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.rs-btn {
+  position: relative; overflow: hidden; width: 100%; min-height: 64px; padding: 16px 20px;
+  font: inherit; font-size: 18px; font-weight: 500; line-height: 1.25; letter-spacing: -0.01em; text-align: left;
+  color: var(--text); background: var(--raise); border: 1px solid var(--line-2); border-radius: 18px; cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05); touch-action: manipulation; user-select: none; -webkit-user-select: none;
+  transition: transform 0.35s var(--spring), border-color 0.3s var(--spring), background-color 0.3s var(--spring);
+  animation: rs-rise 0.55s var(--spring) both; animation-delay: calc(var(--i, 0) * 70ms + 60ms);
+}
+.rs-btn:active { transform: scale(0.98); background-color: var(--press); transition-duration: 0.12s; }
+@media (hover: hover) { .rs-btn:hover { border-color: var(--line-3); } }
+.rs-repeat { min-height: 76px; font-size: 20px; font-weight: 600; border-color: var(--accent-edge); background: var(--accent-soft); }
+.rs-repeat:active { background-color: var(--accent-press); }
+@media (hover: hover) { .rs-repeat:hover { border-color: var(--accent); } }
+.rs-actions > .rs-btn + .rs-btn { animation-delay: 120ms; }
+
+/* ---------- phone home (?classes) ---------- */
+.rs-home { justify-content: flex-end; }
+.rs-idle { padding: 0; }
+.rs-wait { display: flex; flex-direction: column; gap: 20px; padding-bottom: 6vh; }
+.rs-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.rs-list li { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px 8px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); font-size: 15px; color: var(--muted); animation: rs-rise 0.6s var(--spring) both; animation-delay: calc(var(--i, 0) * 70ms + 120ms); }
+.rs-list li::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--line-3); }
+.rs-poll { position: relative; overflow: hidden; align-self: flex-start; padding-bottom: 10px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); }
+/* A thin scanning line under the poll note: the phone is still checking. */
+.rs-poll::after { content: ''; position: absolute; left: 0; bottom: 0; width: 40%; height: 1px; background: var(--accent); transform: translateX(-100%); animation: rs-scan 2.6s var(--spring) infinite; }
+.rs-none .rs-empty { padding-bottom: 6vh; color: var(--text); animation: rs-rise 0.7s var(--spring) both; }
+.rs-none .rs-orb { background: var(--dim); box-shadow: 0 0 0 6px rgba(142, 142, 150, 0.12); }
+.rs-none .rs-orb::before, .rs-none .rs-orb::after { border-color: var(--line-2); background: none; }
+
+.rs-choose { padding-bottom: calc(var(--safe-b) + 4vh); }
+.rs-title { margin: 0 0 12px; max-width: 10ch; font-size: clamp(38px, 11vw, 60px); font-weight: 600; line-height: 1; letter-spacing: -0.045em; animation: rs-rise 0.7s var(--spring) both; }
+.rs-join { min-height: 76px; padding-left: 44px; padding-right: 52px; font-size: 20px; font-weight: 600; }
+/* Each live class: a breathing accent dot on the left and a drawn chevron on the right (no text, so the name stays "Join ..."). */
+.rs-join::before { content: ''; position: absolute; left: 20px; top: 50%; width: 8px; height: 8px; margin-top: -4px; border-radius: 50%; background: var(--accent); animation: rs-pulse 2.4s ease-in-out infinite; }
+.rs-join::after { content: ''; position: absolute; right: 24px; top: 50%; width: 10px; height: 10px; margin-top: -5px; border-top: 2px solid var(--muted); border-right: 2px solid var(--muted); transform: rotate(45deg); transition: transform 0.35s var(--spring); }
+.rs-join:active::after { transform: translateX(3px) rotate(45deg); }
+.rs-join:first-child { border-color: var(--accent-edge); background: var(--accent-soft); }
+
+/* Short screens (phone on its side): smaller type so the whisper and the buttons both fit. */
+@media (max-height: 500px) {
+  .rs-phrase { font-size: clamp(32px, 7vh, 48px); }
+  .rs-stage { padding: 12px 0; }
+  .rs-start-btn { font-size: 44px; padding-bottom: calc(var(--safe-b) + 64px); }
+  .rs-orb, .rs-stage::before, .rs-stage::after { display: none; }
+}
+
+/* ---------- motion ---------- */
+@keyframes rs-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes rs-word { from { opacity: 0; transform: translateY(0.32em); } to { opacity: 1; transform: none; } }
+@keyframes rs-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes rs-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(0.7); opacity: 0.45; } }
+@keyframes rs-breathe { 0%, 100% { transform: scale(0.82); opacity: 0.35; } 50% { transform: scale(1); opacity: 1; } }
+@keyframes rs-drift { 0%, 100% { transform: scale(0.9); opacity: 0.08; } 50% { transform: scale(1.04); opacity: 0.22; } }
+@keyframes rs-ripple { from { transform: scale(0.3); opacity: 0.9; } to { transform: scale(1.1); opacity: 0; } }
+@keyframes rs-idle { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+@keyframes rs-sweep { 0% { transform: scaleX(0); opacity: 1; } 27% { transform: scaleX(1); opacity: 1; } 60% { opacity: 1; } 100% { transform: scaleX(1); opacity: 0.5; } }
+@keyframes rs-shimmer { to { transform: translateX(260%); } }
+@keyframes rs-scan { to { transform: translateX(260%); } }
+@media (prefers-reduced-motion: reduce) {
+  .rs *, .rs *::before, .rs *::after, .rs::before, .rs::after { animation: none !important; transition: none !important; }
+}

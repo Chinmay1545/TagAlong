@@ -37,14 +37,18 @@ export function createApp(callModel: CallModel, synth?: Synth, callText?: (promp
       url.searchParams.delete('key') // keep the key out of history and screenshots
       return void res.redirect(302, url.pathname + url.search)
     }
-    if (req.path.startsWith('/api/') && req.path !== '/api/health' && !keyAllowed(access, req.headers.cookie) && !studentVoice(req, res)) return void res.status(401).json({ error: 'access key required' })
+    const path = req.path.toLowerCase() // Express routes ignore case, so the key check must too
+    if (path.startsWith('/api/') && path !== '/api/health' && !keyAllowed(access, req.headers.cookie) && !roomRoute(req, res)) return void res.status(401).json({ error: 'access key required' })
     next()
   })
-  // Classroom relay: a student phone has no access key, only its room's token. That token opens /api/tts and
-  // nothing else, and the TTS guard below only voices phrases the camera published in that room.
-  function studentVoice(req: express.Request, res: express.Response): boolean {
+  // Classroom relay: a student phone has no access key, only room tokens. They open exactly two routes:
+  // /api/tts (headers x-room, x-room-token; the TTS guard below only voices phrases the camera published in that room)
+  // and /api/room-status (each body entry carries its own token, checked in the handler).
+  function roomRoute(req: express.Request, res: express.Response): boolean {
+    const path = req.path.toLowerCase()
+    if (req.method === 'POST' && path === '/api/room-status') return true
     const room = req.get('x-room'), token = req.get('x-room-token')
-    if (req.path !== '/api/tts' || !opts?.rooms || !isRoomName(room) || !opts.rooms.verify(room, token ?? null)) return false
+    if (path !== '/api/tts' || !opts?.rooms || !isRoomName(room) || !opts.rooms.verify(room, token ?? null)) return false
     res.locals.room = room
     return true
   }
@@ -53,6 +57,15 @@ export function createApp(callModel: CallModel, synth?: Synth, callText?: (promp
     if (!opts?.rooms) return void res.status(503).json({ error: 'classroom relay not configured' })
     if (!isRoomName(room)) return void res.status(400).json({ error: 'room must be 1-40 characters: a-z, 0-9 and -' })
     res.json({ room, path: studentLinkPath(room, opts.rooms.tokenFor(room)) })
+  })
+  app.post('/api/room-status', express.json({ limit: '4kb' }), (req, res) => {
+    const list: unknown = req.body?.rooms
+    if (!opts?.rooms) return void res.status(503).json({ error: 'classroom relay not configured' })
+    if (!Array.isArray(list) || list.length > 10) return void res.status(400).json({ error: 'rooms must be a list of at most 10' })
+    const hub = opts.rooms
+    const live = list.flatMap((e: { room?: unknown; token?: unknown } | null) =>
+      e && isRoomName(e.room) && typeof e.token === 'string' && hub.verify(e.room, e.token) && hub.isLive(e.room) ? [e.room] : [])
+    res.json({ live })
   })
   app.get('/api/health', (_req, res) => void res.json(healthFrom(process.env, version)))
   app.post('/api/read-board', express.raw({ type: 'image/jpeg', limit: '5mb' }), readBoardHandler(callModel, opts?.streamModel))
