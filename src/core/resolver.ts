@@ -2,6 +2,8 @@ import { MAX_DIST, TIP_WINDOW_MS } from './config'
 import type { TipBuffer } from './tipBuffer'
 import type { Box, Resolution, Term, TipSample, WordEvent } from './types'
 
+// Pointer points come from any source (finger, stick, laser, mouse); tips.lead() keeps only the one that wins.
+
 const EPS = 1e-9
 
 export function boxDistance(box: Box, x: number, y: number): number {
@@ -75,9 +77,9 @@ export function resolvePointer(word: WordEvent, terms: Term[], tips: TipBuffer):
   const { t } = word
   const w = word.word.toLowerCase().replace(/[^a-z]/g, '')
   if (w === 'these' || w === 'those') {
-    return { word, terms: termsAlongPath(terms, tips.window(t - 1000, t + 1000), t - 1000, t + 1000) }
+    return { word, terms: termsAlongPath(terms, tips.lead(t - 1000, t + 1000), t - 1000, t + 1000) }
   }
-  const tip = steadiestTip(tips.window(t - TIP_WINDOW_MS, t + TIP_WINDOW_MS), t)
+  const tip = steadiestTip(tips.lead(t - TIP_WINDOW_MS, t + TIP_WINDOW_MS), t)
   const term = tip ? termAt(terms, tip.x, tip.y) : null
   return { word, terms: term ? [term] : [] }
 }

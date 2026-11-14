@@ -6,7 +6,8 @@ import { readBoard } from './boardClient'
 import { mergeTerms } from '../core/mergeTerms'
 import { uniquePhrases } from '../core/phrase'
 
-// Strict >: a hand seen exactly HAND_RECENT_MS ago still counts as recent.
+// Strict >: a hand seen exactly HAND_RECENT_MS ago still counts as recent. "Hand" means anything that
+// covers the board (finger or stick); a laser dot covers nothing and never blocks a read.
 export function shouldReadBoard(now: number, lastTipAt: number | null, changed: boolean): boolean {
   return changed && (lastTipAt === null || now - lastTipAt > HAND_RECENT_MS)
 }
@@ -48,7 +49,7 @@ export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms
     lastSeen = gray
     if (!isSettled(stillTicks)) return
     const changed = lastRead === null || frameChanged(lastRead, gray)
-    if (!shouldReadBoard(performance.now(), tips.lastAt(), changed)) return
+    if (!shouldReadBoard(performance.now(), tips.lastCoverAt(), changed)) return
     inFlight = true
     reading = (lastRead && changedRegion(lastRead, gray)) || FULL
     const gen = generation

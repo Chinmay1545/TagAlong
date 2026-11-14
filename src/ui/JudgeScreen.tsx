@@ -7,7 +7,10 @@ import { startCamera } from '../vision/camera'
 import { keepScreenAwake } from '../vision/wakeLock'
 import { startHandTracker } from '../vision/handTracker'
 import { loadFixture } from '../board/boardClient'
-import { boardMode, stageFor, mouseToBoard } from '../board/mode'
+import { boardMode, stageFor } from '../board/mode'
+import { activePointer, kindOf } from '../vision/pointer'
+import { createMousePointer } from '../vision/mousePointer'
+import { drawPointerDot } from './pointerDot'
 import { startBoardLoop, type BoardLoop } from '../board/boardLoop'
 import { createLive } from '../live/live'
 import { createWhisperPlayer } from '../audio/whisper'
@@ -122,6 +125,8 @@ export function JudgeScreen() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const tipsRef = useRef(new TipBuffer())
+  const mouseRef = useRef(createMousePointer(p => tipsRef.current.push(p)))
+  useEffect(() => () => mouseRef.current.stop(), [])
   const termsRef = useRef<Term[]>([])
   const resolvedRef = useRef<Term[]>([])
   const boardLoopRef = useRef<BoardLoop | null>(null)
@@ -220,7 +225,7 @@ export function JudgeScreen() {
     const stats = setInterval(() => {
       const now = performance.now()
       liveRef.current.checkHeld() // gives up on held words that waited too long
-      setFps(tipsRef.current.window(now - 1000, now).length)
+      setFps(tipsRef.current.window(now - 1000, now).filter(s => kindOf(s) === 'finger').length)
       const at = boardAtRef.current
       setBoardAgo(fixture ? 'fixture' : at === null ? 'none' : `${((now - at) / 1000).toFixed(0)}s ago`)
     }, 500)
@@ -274,19 +279,9 @@ export function JudgeScreen() {
         drawBox(ctx, t.box, W, H)
         drawLabel(ctx, t.phrase, x, y - 4, on ? hue : null, small)
       }
-      const all = tipsRef.current.all()
-      const last = all[all.length - 1]
-      const tip = last && now - last.t < 500 ? last : null
+      const tip = activePointer(tipsRef.current.all(), now) // laser, then stick, then finger
       if (signalRef.current && !reduceMotion?.matches) drawSignal(ctx, signalRef.current, tip, now, W, H)
-      if (tip) {
-        ctx.fillStyle = '#fafafa'
-        ctx.strokeStyle = '#09090b'
-        ctx.lineWidth = 2
-        ctx.beginPath()
-        ctx.arc(flipX(tip.x) * W, tip.y * H, 6, 0, Math.PI * 2)
-        ctx.fill()
-        ctx.stroke()
-      }
+      if (tip) drawPointerDot(ctx, tip, W, H, flipX)
       raf = requestAnimationFrame(draw)
     }
     raf = requestAnimationFrame(draw)
@@ -298,10 +293,9 @@ export function JudgeScreen() {
     if (transcriptRef.current.addResolution(r)) setSegs(transcriptRef.current.segments()) // a held word joined an earlier sentence
     bcRef.current.send(resolutionMsg(r, ms, !whisperRef.current))
     resolvedRef.current = r.terms
-    const tips = tipsRef.current.all()
-    const tip = tips[tips.length - 1]
     const now = performance.now()
-    signalRef.current = { at: now, terms: r.terms, tip: tip && now - tip.t < 500 ? { x: tip.x, y: tip.y } : null, muted: ms === null }
+    const tip = activePointer(tipsRef.current.all(), now)
+    signalRef.current = { at: now, terms: r.terms, tip: tip && { x: tip.x, y: tip.y }, muted: ms === null }
     const phrase = r.terms.map(t => t.phrase).join(', ')
     const line = !r.terms.length ? `${r.word.word} → silent`
       : ms === null ? `${r.word.word} → ${phrase} · muted`
@@ -451,11 +445,8 @@ export function JudgeScreen() {
       <Readiness />
       <section className="stage-wrap">
         <div className="viewfinder rise" style={step(1)}>
-          <div className="stage" onPointerMove={stage.photo ? e => {
-            // Demo: the mouse points at the saved photo (the camera still tracks a real hand too).
-            const p = mouseToBoard(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect())
-            if (p) tipsRef.current.push({ t: performance.now(), ...p })
-          } : undefined}>
+          {/* Demo: the mouse points at the saved photo (the camera still tracks a real hand when the mouse is off the photo). */}
+          <div className="stage" onPointerMove={stage.photo ? e => mouseRef.current.move(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect()) : undefined} onPointerLeave={stage.photo ? () => mouseRef.current.leave() : undefined}>
             <video ref={videoRef} className={mirror ? 'mirror' : stage.photo ? 'behind-photo' : undefined} playsInline muted />
             {stage.photo && <img className="demo-photo" src={stage.photo} alt="Saved demo board" />}
             <canvas ref={canvasRef} />

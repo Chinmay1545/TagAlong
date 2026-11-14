@@ -1,7 +1,7 @@
 import { HandLandmarker } from '@mediapipe/tasks-vision'
 import wasmLoaderPath from '@mediapipe/tasks-vision/vision_wasm_internal.js?url'
 import wasmBinaryPath from '@mediapipe/tasks-vision/vision_wasm_internal.wasm?url'
-import type { TipSample } from '../core/types'
+import type { PointerPoint } from './pointer'
 
 const create = (delegate: 'GPU' | 'CPU') =>
   HandLandmarker.createFromOptions(
@@ -11,7 +11,7 @@ const create = (delegate: 'GPU' | 'CPU') =>
 
 export async function startHandTracker(
   video: HTMLVideoElement,
-  onTip: (s: TipSample) => void,
+  onTip: (p: PointerPoint) => void,
 ): Promise<() => void> {
   let landmarker: HandLandmarker
   try {
@@ -26,8 +26,10 @@ export async function startHandTracker(
       lastTime = video.currentTime
       try {
         const now = performance.now()
-        const tip = landmarker.detectForVideo(video, now).landmarks[0]?.[8]
-        if (tip) onTip({ t: now, x: tip.x, y: tip.y }) // unmirrored, never flip
+        const res = landmarker.detectForVideo(video, now)
+        const tip = res.landmarks[0]?.[8] // index fingertip
+        const confidence = res.handedness?.[0]?.[0]?.score ?? 1
+        if (tip) onTip({ kind: 'finger', x: tip.x, y: tip.y, confidence, t: now }) // unmirrored, never flip
       } catch (e) {
         console.warn('detectForVideo failed, skipping frame:', (e as Error).message) // one bad frame must not kill tracking
       }

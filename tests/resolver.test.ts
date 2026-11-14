@@ -116,3 +116,34 @@ describe('resolvePointer', () => {
     expect(r.terms.map(t => t.id)).toEqual([1, 2])
   })
 })
+
+describe('resolvePointer with more than one kind of pointer (2.1)', () => {
+  const at = (kind: 'finger' | 'stick' | 'laser', x: number, y: number) =>
+    Array.from({ length: 9 }, (_, i) => ({ kind, x, y, confidence: 1, t: 300 + i * 50 }))
+  const fill = (...tracks: { t: number; x: number; y: number }[][]) => {
+    const buf = new TipBuffer()
+    tracks.flat().sort((a, b) => a.t - b.t).forEach(s => buf.push(s))
+    return buf
+  }
+  const word = { word: 'this', t: 500, isPointer: true }
+  it('a laser on B wins over the hand that holds it, resting near A', () => {
+    expect(resolvePointer(word, [A, B], fill(at('finger', 0.25, 0.25), at('laser', 0.65, 0.25))).terms).toEqual([B])
+  })
+  it('a stick tip on B wins over the hand near A', () => {
+    expect(resolvePointer(word, [A, B], fill(at('finger', 0.25, 0.25), at('stick', 0.65, 0.25))).terms).toEqual([B])
+  })
+  it('a laser wins over a stick', () => {
+    expect(resolvePointer(word, [A, B], fill(at('stick', 0.25, 0.25), at('laser', 0.65, 0.25))).terms).toEqual([B])
+  })
+  it('each kind resolves on its own', () => {
+    for (const kind of ['finger', 'stick', 'laser'] as const) {
+      expect(resolvePointer(word, [A, B], fill(at(kind, 0.65, 0.25))).terms).toEqual([B])
+    }
+  })
+  it('"these" follows the laser path, not the hand', () => {
+    const sweep = Array.from({ length: 11 }, (_, i) => ({ kind: 'laser' as const, confidence: 1, t: i * 100, x: 0.25 + 0.04 * i, y: 0.25 }))
+    const hand = Array.from({ length: 11 }, (_, i) => ({ kind: 'finger' as const, confidence: 1, t: i * 100 + 1, x: 0.9, y: 0.9 }))
+    const r = resolvePointer({ word: 'these', t: 500, isPointer: true }, [A, B], fill(sweep, hand))
+    expect(r.terms.map(t => t.id)).toEqual([1, 2])
+  })
+})

@@ -40,7 +40,7 @@ describe('client fetches', () => {
 
 // Drives the real loop with a fake camera: `scene` sets the frame's brightness,
 // `replies` is what /api/read-board answers, one entry per read.
-function harness() {
+function harness(tips = new TipBuffer()) {
   const W = 64, H = 36
   const cam = { scene: 50 }
   const canvas = {
@@ -58,7 +58,7 @@ function harness() {
   const video = { readyState: 4, videoWidth: W, videoHeight: H } as HTMLVideoElement
   const shown: Term[][] = []
   vi.useFakeTimers()
-  const loop = startBoardLoop(video, new TipBuffer(), t => shown.push(t))
+  const loop = startBoardLoop(video, tips, t => shown.push(t))
   // Long enough for a changed picture to settle and be read (one check to see the change, then SETTLE_MS of stillness).
   const tick = () => vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS + SETTLE_MS)
   return { cam, replies, shown, reads: () => fetchMock.mock.calls.length, tick, stop: loop.stop, reset: loop.reset, pending: loop.pendingRegion, fetchMock }
@@ -320,6 +320,48 @@ describe('board loop: every box gets its own spoken phrase', () => {
     const last = h.shown.at(-1)!
     expect(last).toHaveLength(2)
     expect(new Set(last.map(x => x.phrase)).size).toBe(2)
+    h.stop()
+  })
+})
+
+describe('board loop: what blocks a read (pointer kinds)', () => {
+  // A pointer of this kind is seen every 100 ms for as long as the test runs.
+  const keepPointing = (tips: TipBuffer, kind: 'finger' | 'stick' | 'laser' | 'mouse') =>
+    setInterval(() => tips.push({ kind, t: performance.now(), x: 0.5, y: 0.5, confidence: 1 }), 100)
+
+  it('a laser on the board does not block a read', async () => {
+    const tips = new TipBuffer()
+    const h = harness(tips)
+    const id = keepPointing(tips, 'laser')
+    h.replies.push(fraction)
+    await h.tick()
+    expect(h.reads()).toBe(1)
+    expect(h.shown).toEqual([fraction])
+    clearInterval(id)
+    h.stop()
+  })
+
+  it('a finger in view still blocks the read', async () => {
+    const tips = new TipBuffer()
+    const h = harness(tips)
+    const id = keepPointing(tips, 'finger')
+    h.replies.push(fraction)
+    await h.tick()
+    expect(h.reads()).toBe(0)
+    clearInterval(id)
+    await h.tick()
+    expect(h.reads()).toBe(1)
+    h.stop()
+  })
+
+  it('a stick in view blocks the read too (it covers the board)', async () => {
+    const tips = new TipBuffer()
+    const h = harness(tips)
+    const id = keepPointing(tips, 'stick')
+    h.replies.push(fraction)
+    await h.tick()
+    expect(h.reads()).toBe(0)
+    clearInterval(id)
     h.stop()
   })
 })

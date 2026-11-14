@@ -51,7 +51,7 @@ export function createLive({ getTerms, tips, player, now = () => performance.now
         if (!r.terms.length && SINGLE.has(word.word)) {
           // No box under the pointer yet. If it points at ink the board read has not drawn yet, hold the
           // word instead of going silent; checkHeld whispers it when the box arrives.
-          const tip = steadiestTip(tips.window(word.t - TIP_WINDOW_MS, word.t + TIP_WINDOW_MS), word.t)
+          const tip = steadiestTip(tips.lead(word.t - TIP_WINDOW_MS, word.t + TIP_WINDOW_MS), word.t)
           const region = getPendingRegion()
           if (tip && region && near(tip, region)) { held.push({ word, tip, at: now() }); continue }
         }
