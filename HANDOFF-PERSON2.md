@@ -8,7 +8,7 @@ Person 1 has finished the speed lane. This document covers what changed, how it 
 
 | What | Where |
 |---|---|
-| Speed-lane work | Branch `feat/team-plan` on `Chinmay1545/TagAlong`, 11 commits ahead of `main` |
+| Speed-lane work | Branch `feat/team-plan` on `Chinmay1545/TagAlong` (ahead of `main`, not merged yet) |
 | PR | Not opened yet. Open it from `https://github.com/Chinmay1545/TagAlong/pull/new/feat/team-plan` |
 | Teammate's hosting PR | PR #1, branch `feat/railway-deploy`. It changes `server/index.ts`, `server/transcribe.ts`, `package.json`, `.env.example` |
 | Test baseline | 414 tests passing; `npx tsc --noEmit` clean; `npm run build` passing |
