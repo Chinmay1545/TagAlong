@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { createWhisperPlayer } from '../audio/whisper'
 import { keepScreenAwake } from '../vision/wakeLock'
 import { RoomStudentView, roomTts } from '../ui/RoomStudentView'
@@ -6,6 +6,7 @@ import { createEarcons } from './earcons'
 import { unlockVoice } from './voice'
 import { loadClasses, type SavedClass } from './classes'
 import '../ui/student.css'
+import './phone.css'
 
 // The home-screen app (?classes). It only ever listens: it asks the server which saved classes are live
 // (no sockets open until one is chosen), then hands the phone to that class's listening screen.
@@ -93,7 +94,14 @@ export function PhoneHome({ deps }: { deps?: Partial<Deps> }) {
     void check(true)
   }
 
-  if (all.length === 0) return <main className="student phone-home"><p className="s-empty">Open the class link from your disability office once.</p></main>
+  if (all.length === 0) {
+    return (
+      <main className="rs rs-home rs-none">
+        <div className="rs-decor" aria-hidden="true"><span className="rs-kicker"><span className="rs-dot" />TagAlong</span><span className="rs-orb" /></div>
+        <p className="rs-empty">Open the class link from your disability office once.</p>
+      </main>
+    )
+  }
   if (all.length === 1) {
     return <RoomStudentView room={all[0].room} token={all[0].token} label={all[0].label} deps={{ ...deps?.room, ...(deps?.player && { player: deps.player }) }} />
   }
@@ -104,14 +112,25 @@ export function PhoneHome({ deps }: { deps?: Partial<Deps> }) {
       {phase === 'joined' && joined ? (
         <RoomStudentView room={joined.room} token={joined.token} label={joined.label} autoStart startedText={said || undefined} deps={{ ...deps?.room, player: player.current, earcons: earcons.current }} />
       ) : (
-        <main className="student phone-home">
-          {phase === 'idle' && <button type="button" className="room-start-btn phone-start-btn" onClick={begin}>Start listening</button>}
-          {phase === 'waiting' && <p className="s-empty phone-waiting" aria-hidden="true">{said}</p>}
+        <main className={`rs rs-home rs-${phase}`}>
+          <div className="rs-decor" aria-hidden="true">
+            <span className="rs-kicker"><span className="rs-dot" />TagAlong<span className="rs-count">{phase === 'choose' ? `${live.length} live now` : `${all.length} classes saved`}</span></span>
+            <span className="rs-orb" />
+            {phase === 'idle' && <span className="rs-hint">Joins your class the moment it starts.</span>}
+          </div>
+          {phase === 'idle' && <button type="button" className="rs-start-btn phone-start-btn" onClick={begin}>Start listening</button>}
+          {phase === 'waiting' && (
+            <div className="rs-wait" aria-hidden="true">
+              <p className="rs-empty phone-waiting" aria-hidden="true">Waiting for your class to start.</p>
+              <ul className="rs-list">{all.map((c, i) => <li key={c.room} style={{ '--i': i } as CSSProperties}>{c.label}</li>)}</ul>
+              <span className="rs-poll">Checking every few seconds</span>
+            </div>
+          )}
           {phase === 'choose' && (
             <>
-              <h1 className="s-empty phone-choose-title">Choose a class.</h1>
-              <section className="s-actions phone-choose" aria-label="Live classes">
-                {live.map((c, i) => <button key={c.room} ref={i === 0 ? firstJoin : undefined} type="button" className="s-btn phone-join-btn" onClick={() => join(c, false)}>Join {c.label}</button>)}
+              <h1 className="rs-title phone-choose-title">Choose a class.</h1>
+              <section className="rs-actions phone-choose" aria-label="Live classes">
+                {live.map((c, i) => <button key={c.room} ref={i === 0 ? firstJoin : undefined} type="button" className="rs-btn rs-join phone-join-btn" style={{ '--i': i } as CSSProperties} onClick={() => join(c, false)}>Join {c.label}</button>)}
               </section>
             </>
           )}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { Resolution, Term, WordEvent } from '../core/types'
 import { createWhisperPlayer } from '../audio/whisper'
 import { keepScreenAwake } from '../vision/wakeLock'
@@ -7,6 +7,7 @@ import { unlockVoice } from '../phone/voice'
 import { connectRoom, roomSocketUrl, type RoomState } from '../live/roomClient'
 import type { ServerToStudent, WhisperItem } from '../live/roomProtocol'
 import './student.css'
+import '../phone/phone.css'
 
 // A blind student's own phone in a classroom: opened from the saved course link (?student&room=..&t=..).
 // One tap to start (phones block sound until a tap), then it only listens: whispers are voiced on this
@@ -59,8 +60,10 @@ export function RoomStudentView({ room, token, deps, autoStart, startedText, lab
     voiceWaitMs: deps?.voiceWaitMs ?? VOICE_WAIT_MS,
   }
   const [started, setStarted] = useState(false)
-  const [phrase, setPhrase] = useState<string | null>(null)
+  // What the screen shows big: the last whisper (with the word that triggered it) or the board read out.
+  const [shown, setShown] = useState<{ word: string; text: string; n: number } | null>(null)
   const [live, setLive] = useState(false)
+  const [drop, setDrop] = useState(false)
   const [said, setSaidRaw] = useState('')
   // A live region only speaks when its text changes, so a repeat gets an invisible zero-width space toggled on.
   const setSaid = (t: string) => setSaidRaw(prev => (prev === t ? t + '​' : t))
@@ -108,12 +111,12 @@ export function RoomStudentView({ room, token, deps, autoStart, startedText, lab
           const r = asResolution(m.word, m.items)
           last.current = r
           say(r)
-          setPhrase(m.items.map(i => i.phrase).join(' and '))
+          setShown(p => ({ word: m.word, text: m.items.map(i => i.phrase).join(' and '), n: (p?.n ?? 0) + 1 }))
         } else if (m.type === 'notice') setSaid(m.text)
       },
       onState: s => {
-        if (s === 'reconnecting') { setSaid('Reconnecting…'); setLive(false); if (!dropped.current) earcons.play('drop'); dropped.current = true }
-        else if (s === 'open') { if (wasOpen.current) { setSaid('Back.'); earcons.play('back') } wasOpen.current = true; dropped.current = false }
+        if (s === 'reconnecting') { setSaid('Reconnecting…'); setLive(false); setDrop(true); if (!dropped.current) earcons.play('drop'); dropped.current = true }
+        else if (s === 'open') { setDrop(false); if (wasOpen.current) { setSaid('Back.'); earcons.play('back') } wasOpen.current = true; dropped.current = false }
       },
     })
     stop.current = () => { conn.close(); release() }
@@ -126,29 +129,46 @@ export function RoomStudentView({ room, token, deps, autoStart, startedText, lab
   const readBoard = () => {
     if (!board.current.length) { setSaid('The board is empty.'); return }
     say(asResolution('board', board.current.map(p => ({ phrase: p, x: 0.5 }))))
+    setShown(p => ({ word: 'On the board', text: board.current.join(', '), n: (p?.n ?? 0) + 1 }))
   }
 
   if (!started) {
     return (
-      <main className="student room-start">
-        <button type="button" className="room-start-btn" onClick={start}>Start listening to {name}</button>
+      <main className="rs rs-start">
+        <div className="rs-decor" aria-hidden="true">
+          <span className="rs-kicker"><span className="rs-dot" />TagAlong</span>
+          <span className="rs-orb" />
+          <span className="rs-hint">Each term the teacher points at is whispered here.</span>
+        </div>
+        <button type="button" className="rs-start-btn" onClick={start}>Start listening <span className="rs-to">to {name}</span></button>
       </main>
     )
   }
+  const state = drop ? 'drop' : live ? 'live' : 'wait'
   return (
-    <main className="student">
-      <header className="s-head mono">
-        <span><span className="dot" aria-hidden="true" />{name}</span>
-        <span>{live ? 'live' : 'waiting'}</span>
+    <main className="rs rs-live" data-state={state}>
+      <header className="rs-head">
+        <span className="rs-chip"><span className="rs-dot" aria-hidden="true" />{name}</span>
+        <span className="rs-state">{live ? 'live' : 'waiting'}</span>
       </header>
-      <section className="s-stage">
-        {phrase ? <p className="s-phrase">{phrase}</p> : <p className="s-empty">{live ? 'Listening.' : `Waiting for ${name} to start.`}</p>}
+      {drop && <div className="rs-banner" aria-hidden="true">Reconnecting</div>}
+      <section className="rs-stage">
+        {shown ? (
+          <div className="rs-now" key={shown.n}>
+            <span className="rs-word" aria-hidden="true">{shown.word}</span>
+            {/* The real text stays one plain node for the screen reader; the per-word copy on top only animates. */}
+            <p className="rs-phrase">{shown.text}<span className="rs-words" aria-hidden="true">{words(shown.text)}</span></p>
+          </div>
+        ) : <p className="rs-empty">{live ? 'Listening.' : `Waiting for ${name} to start.`}</p>}
         <p className="sr" aria-live="assertive" aria-atomic="true">{said}</p>
       </section>
-      <section className="s-actions" aria-label="Listen">
-        <button type="button" className="s-btn" onClick={repeat}>Repeat</button>
-        <button type="button" className="s-btn" onClick={readBoard}>What's on the board?</button>
+      <section className="rs-actions" aria-label="Listen">
+        <button type="button" className="rs-btn rs-repeat" onClick={repeat}>Repeat</button>
+        <button type="button" className="rs-btn" onClick={readBoard}>What's on the board?</button>
       </section>
     </main>
   )
 }
+
+// One span per word (spaces kept between them, so textContent is the phrase), each rising in turn.
+const words = (text: string) => text.split(' ').flatMap((w, i) => [i ? ' ' : null, <span key={i} style={{ '--i': i } as CSSProperties}>{w}</span>])
