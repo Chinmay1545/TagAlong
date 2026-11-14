@@ -25,6 +25,7 @@ export async function mountJudge(search = '') {
     play: vi.fn((_r: Resolution) => (enabled ? { startedAt: performance.now() + 5 } : null)),
     setEnabled: vi.fn((on: boolean) => { enabled = on }),
     startBoardLoop: vi.fn(),
+    startToolTracker: vi.fn((..._a: unknown[]) => () => {}), // called with (video, onPoint, getHand, { laser, stick })
     boardReset: vi.fn(),
     startCamera: vi.fn(async () => {}),
     setTerms: null as null | ((t: Term[]) => void), // live mode: what a board read would hand over
@@ -37,7 +38,7 @@ export async function mountJudge(search = '') {
   vi.doMock('../../src/vision/handTracker', () => ({
     startHandTracker: async (_v: unknown, onTip: (p: PointerPoint) => void) => { fakes.pushPoint = onTip; return () => {} },
   }))
-  vi.doMock('../../src/vision/toolTracker', () => ({ DETECT_WIDTH: 480, startToolTracker: () => () => {} }))
+  vi.doMock('../../src/vision/toolTracker', () => ({ DETECT_WIDTH: 480, startToolTracker: fakes.startToolTracker }))
   vi.doMock('../../src/board/boardClient', async orig => ({ ...(await orig<object>()), loadFixture: async () => FIXTURE }))
   vi.doMock('../../src/board/boardLoop', async orig => ({
     ...(await orig<object>()),

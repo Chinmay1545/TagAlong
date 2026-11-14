@@ -8,6 +8,7 @@ import { keepScreenAwake } from '../vision/wakeLock'
 import { startHandTracker } from '../vision/handTracker'
 import { startToolTracker } from '../vision/toolTracker'
 import type { HandInfo } from '../vision/stick'
+import { pointersLabel, toolsFor } from '../vision/tools'
 import { loadFixture } from '../board/boardClient'
 import { boardMode, stageFor } from '../board/mode'
 import { activePointer, kindOf } from '../vision/pointer'
@@ -48,6 +49,8 @@ const stage = stageFor(boardMode(location.search), new URLSearchParams(location.
 // (the .mirror class), so the overlay must be drawn in that same displayed space. When off,
 // flipX is the identity. Data stays unmirrored either way; ONLY drawing goes through this flip.
 const mirror = stage.mirror
+// Laser and stick detectors run only when the link asks for them (?laser=1, ?stick=1).
+const tools = toolsFor(location.search)
 const flipX = (x: number, w = 0): number => (mirror ? 1 - (x + w) : x)
 
 function drawBox(ctx: CanvasRenderingContext2D, b: Box, W: number, H: number) {
@@ -218,7 +221,7 @@ export function JudgeScreen() {
         let hand: HandInfo | null = null
         const stop = await startHandTracker(video, s => tipsRef.current.push(s), h => { hand = h })
         if (cancelled) { stop(); return }
-        const stopTools = startToolTracker(video, p => tipsRef.current.push(p), () => hand) // laser dot and stick tip
+        const stopTools = startToolTracker(video, p => tipsRef.current.push(p), () => hand, tools) // laser dot and stick tip, if switched on
         stopTracker = () => { stop(); stopTools() }
         if (stage.boardLoop) boardLoopRef.current = startBoardLoop(video, tipsRef.current, setTerms)
       } catch (e) {
@@ -411,7 +414,7 @@ export function JudgeScreen() {
     const fallback = () => {
       if (dead || web) return
       mic?.stop(); ws?.close(); mic = ws = null
-      web = startWebSpeech(items => live.handleItems(items, null), t => onFinal('web')(t), () => { cleanup(); stopSpeechRef.current = null; setSpeech('unavailable') })
+      web = startWebSpeech(items => live.handleItems(items, null, true), t => onFinal('web')(t), () => { cleanup(); stopSpeechRef.current = null; setSpeech('unavailable') })
       setSpeech(web ? 'web speech' : 'unavailable')
       if (!web) stopSpeechRef.current = null
     }
@@ -444,7 +447,7 @@ export function JudgeScreen() {
       <div className="grain" aria-hidden="true" />
       <header className="masthead rise" style={step(0)}>
         <div className="wordmark"><span className="dot" aria-hidden="true" />THIS &amp; THAT</div>
-        <div className="status mono">board · {boardAgo}<span className="status-gap" />speech · {speechLabel}<span className="status-gap" /><a className="student-link" href="/?student=1" target="student" onClick={e => { e.preventDefault(); window.open('/?student=1', 'student', 'popup,width=1280,height=800') }} title="Opens in its own window; keep this window visible so hand tracking keeps running">Open student view</a></div>
+        <div className="status mono">board · {boardAgo}<span className="status-gap" />speech · {speechLabel}<span className="status-gap" />pointers · {pointersLabel(tools, !!stage.photo)}<span className="status-gap" /><a className="student-link" href="/?student=1" target="student" onClick={e => { e.preventDefault(); window.open('/?student=1', 'student', 'popup,width=1280,height=800') }} title="Opens in its own window; keep this window visible so hand tracking keeps running">Open student view</a></div>
       </header>
       <Readiness />
       <section className="stage-wrap">

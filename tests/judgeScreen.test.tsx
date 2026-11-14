@@ -167,3 +167,35 @@ describe('judge screen: pointer dot and label', () => {
     expect(j.fakes.arcs.at(-1)![0]).toBeCloseTo(0.75 * STAGE.width)
   })
 })
+
+describe('judge screen: laser and stick detectors are off unless the link turns them on', () => {
+  const tools = (j: { fakes: { startToolTracker: { mock: { calls: unknown[][] } } } }) => j.fakes.startToolTracker.mock.calls[0]?.[3]
+  const status = (j: { container: HTMLElement }) => j.container.querySelector('.status')!.textContent
+
+  it('a plain link: finger only', async () => {
+    const j = await mountJudge('')
+    expect(tools(j)).toEqual({ laser: false, stick: false })
+    expect(status(j)).toContain('pointers · finger')
+    expect(status(j)).not.toContain('laser')
+    expect(status(j)).not.toContain('stick')
+  })
+  it('?laser=1: the laser detector runs and the screen says so', async () => {
+    const j = await mountJudge('?laser=1')
+    expect(tools(j)).toEqual({ laser: true, stick: false })
+    expect(status(j)).toContain('pointers · finger + laser')
+  })
+  it('?stick=1: the stick detector runs and the screen says so', async () => {
+    const j = await mountJudge('?stick=1')
+    expect(tools(j)).toEqual({ laser: false, stick: true })
+    expect(status(j)).toContain('pointers · finger + stick')
+  })
+  it('both, in demo mode', async () => {
+    const j = await mountJudge('?demo=1&laser=1&stick=1')
+    expect(tools(j)).toEqual({ laser: true, stick: true })
+    expect(status(j)).toContain('pointers · mouse + finger + stick + laser')
+  })
+  it('a plain demo link: mouse and finger', async () => {
+    const j = await mountJudge('?demo=1')
+    expect(status(j)).toContain('pointers · mouse + finger')
+  })
+})

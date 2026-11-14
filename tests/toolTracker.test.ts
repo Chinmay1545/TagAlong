@@ -7,7 +7,7 @@ import type { HandInfo } from '../src/vision/stick'
 afterEach(() => vi.unstubAllGlobals())
 
 // A fake camera: `next()` is the picture the video shows; `step()` runs one animation frame.
-function harness(next: () => TestFrame, getHand?: () => HandInfo | null) {
+function harness(next: () => TestFrame, getHand?: () => HandInfo | null, tools?: { laser: boolean; stick: boolean }) {
   const frames: (() => void)[] = []
   const drawn: number[][] = []
   const video = { readyState: 4, videoWidth: 1280, videoHeight: 720, currentTime: 0 } as HTMLVideoElement
@@ -24,7 +24,7 @@ function harness(next: () => TestFrame, getHand?: () => HandInfo | null) {
   let now = 0
   vi.stubGlobal('performance', { now: () => now })
   const got: PointerPoint[] = []
-  const stop = startToolTracker(video, p => got.push(p), getHand)
+  const stop = startToolTracker(video, p => got.push(p), getHand, tools)
   const step = (newFrame = true) => {
     now += 33
     if (newFrame) (video as { currentTime: number }).currentTime += 0.033
@@ -100,6 +100,41 @@ describe('tool tracker: runs the laser detector on the camera', () => {
     const h = harness(scene, () => { const hand = { x: 300 / 480, y: 150 / 270, r: 16 / 480, fx: 1, fy: 0, t: -5000 }; calls.push(hand); return hand })
     for (let i = 0; i < 10; i++) h.step()
     expect(calls.length).toBeGreaterThan(0)
+    expect(h.got).toEqual([])
+    h.stop()
+  })
+  it('with the laser switched off, a laser on the board gives no points', () => {
+    let x = 200
+    const h = harness(() => { const f = makeFrame(BOARD, DETECT_WIDTH, 270); laserDot(f, x++, 180); return f }, undefined, { laser: false, stick: true })
+    for (let i = 0; i < 6; i++) h.step()
+    expect(h.got).toEqual([])
+    h.stop()
+  })
+  it('with the stick switched off, a stick gives no points but a laser still does', () => {
+    let n = 0
+    const scene = () => {
+      const f = makeFrame(BOARD, DETECT_WIDTH, 270)
+      if (++n > 5) {
+        line(f, 380, 180, 510, 310, 24, [60, 70, 110])
+        disc(f, 380, 180, 16, [200, 150, 125])
+        line(f, 380, 180, 200 + Math.max(0, 10 - n) * 8, 70, 4, [120, 85, 50])
+        laserDot(f, 100, 60)
+      }
+      return f
+    }
+    let now = 0
+    const h = harness(scene, () => ({ x: 380 / 480, y: 180 / 270, r: 16 / 480, fx: Math.SQRT1_2, fy: Math.SQRT1_2, t: now }), { laser: true, stick: false })
+    for (let i = 0; i < 14; i++) { now += 33; h.step() }
+    expect(h.got.length).toBeGreaterThan(0)
+    expect(h.got.every(p => p.kind === 'laser')).toBe(true)
+    h.stop()
+  })
+  it('with both switched off, it does no work at all', () => {
+    let reads = 0
+    const h = harness(() => { reads++; return makeFrame(BOARD, DETECT_WIDTH, 270) }, undefined, { laser: false, stick: false })
+    for (let i = 0; i < 5; i++) h.step()
+    expect(reads).toBe(0)
+    expect(h.pending()).toBe(0)
     expect(h.got).toEqual([])
     h.stop()
   })

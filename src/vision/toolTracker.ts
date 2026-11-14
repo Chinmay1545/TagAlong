@@ -3,18 +3,22 @@ import { createLaserTracker } from './laser'
 import { createStickTracker, type HandInfo } from './stick'
 import type { Frame } from './frame'
 import type { PointerPoint } from './pointer'
+import type { Tools } from './tools'
 
 // The detectors look at a small copy of each camera frame: a few milliseconds per frame, next to MediaPipe.
 export const DETECT_WIDTH = 480
 
 // Runs the laser dot and stick tip detectors on every new camera frame and reports their points, in raw,
 // unmirrored frame coordinates 0..1 like the fingertip. getHand: the hand the hand tracker sees, if any
-// (the stick detector uses it to tell which end of a stick is held).
+// (the stick detector uses it to tell which end of a stick is held). tools: which detectors run; with
+// both off nothing is started at all.
 export function startToolTracker(
   video: HTMLVideoElement,
   onPoint: (p: PointerPoint) => void,
   getHand: () => HandInfo | null = () => null,
+  tools: Tools = { laser: true, stick: true },
 ): () => void {
+  if (!tools.laser && !tools.stick) return () => {}
   const canvas = document.createElement('canvas')
   const laser = createLaserTracker()
   const stick = createStickTracker()
@@ -31,11 +35,15 @@ export function startToolTracker(
         ctx.drawImage(video, 0, 0, w, h)
         const frame: Frame = ctx.getImageData(0, 0, w, h)
         const now = performance.now()
-        const dot = laser.update(frame, now)
-        if (dot) onPoint(dot)
-        const hand = getHand()
-        const tip = stick.update(frame, now, hand && now - hand.t <= HAND_RECENT_MS ? hand : null)
-        if (tip) onPoint(tip)
+        if (tools.laser) {
+          const dot = laser.update(frame, now)
+          if (dot) onPoint(dot)
+        }
+        if (tools.stick) {
+          const hand = getHand()
+          const tip = stick.update(frame, now, hand && now - hand.t <= HAND_RECENT_MS ? hand : null)
+          if (tip) onPoint(tip)
+        }
       } catch (e) {
         console.warn('pointer detectors failed, skipping frame:', (e as Error).message) // one bad frame must not kill tracking
       }
