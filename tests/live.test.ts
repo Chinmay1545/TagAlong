@@ -18,7 +18,7 @@ function setup(fill = true) {
   let enabled = true
   const play = vi.fn((_r: Resolution) => (enabled ? { startedAt: 560 } : null))
   const setEnabled = vi.fn((v: boolean) => { enabled = v })
-  const live = createLive({ getTerms: () => [A, B], tips, player: { play, setEnabled }, now: () => 700 })
+  const live = createLive({ getTerms: () => [A, B], tips, player: { play, setEnabled }, now: () => 700, later: fn => fn() }) // later: the short recheck wait is over at once
   const got: [Resolution, number | null][] = []
   live.onResolution((r, l) => got.push([r, l]))
   return { live, play, got }

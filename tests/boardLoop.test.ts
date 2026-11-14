@@ -40,14 +40,14 @@ describe('client fetches', () => {
 
 // Drives the real loop with a fake camera: `scene` sets the frame's brightness,
 // `replies` is what /api/read-board answers, one entry per read.
-function harness() {
+function harness(tips = new TipBuffer()) {
   const W = 64, H = 36
-  const cam = { scene: 50 }
+  const cam: { scene: number; paint: null | ((rgba: Uint8ClampedArray) => void) } = { scene: 50, paint: null }
   const canvas = {
     width: 0, height: 0,
     getContext: () => ({
       drawImage: () => {},
-      getImageData: () => ({ data: new Uint8ClampedArray(W * H * 4).fill(cam.scene) }),
+      getImageData: () => { const data = new Uint8ClampedArray(W * H * 4).fill(cam.scene); cam.paint?.(data); return { data } },
     }),
     toBlob: (cb: (b: Blob | null) => void) => cb(new Blob(['jpeg'])),
   }
@@ -58,7 +58,7 @@ function harness() {
   const video = { readyState: 4, videoWidth: W, videoHeight: H } as HTMLVideoElement
   const shown: Term[][] = []
   vi.useFakeTimers()
-  const loop = startBoardLoop(video, new TipBuffer(), t => shown.push(t))
+  const loop = startBoardLoop(video, tips, t => shown.push(t))
   // Long enough for a changed picture to settle and be read (one check to see the change, then SETTLE_MS of stillness).
   const tick = () => vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS + SETTLE_MS)
   return { cam, replies, shown, reads: () => fetchMock.mock.calls.length, tick, stop: loop.stop, reset: loop.reset, pending: loop.pendingRegion, fetchMock }
@@ -320,6 +320,123 @@ describe('board loop: every box gets its own spoken phrase', () => {
     const last = h.shown.at(-1)!
     expect(last).toHaveLength(2)
     expect(new Set(last.map(x => x.phrase)).size).toBe(2)
+    h.stop()
+  })
+})
+
+describe('board loop: what blocks a read (pointer kinds)', () => {
+  // A pointer of this kind is seen every 100 ms for as long as the test runs.
+  const keepPointing = (tips: TipBuffer, kind: 'finger' | 'stick' | 'laser' | 'mouse') =>
+    setInterval(() => tips.push({ kind, t: performance.now(), x: 0.5, y: 0.5, confidence: 1 }), 100)
+
+  it('a laser on the board does not block a read', async () => {
+    const tips = new TipBuffer()
+    const h = harness(tips)
+    const id = keepPointing(tips, 'laser')
+    h.replies.push(fraction)
+    await h.tick()
+    expect(h.reads()).toBe(1)
+    expect(h.shown).toEqual([fraction])
+    clearInterval(id)
+    h.stop()
+  })
+
+  it('a finger in view still blocks the read', async () => {
+    const tips = new TipBuffer()
+    const h = harness(tips)
+    const id = keepPointing(tips, 'finger')
+    h.replies.push(fraction)
+    await h.tick()
+    expect(h.reads()).toBe(0)
+    clearInterval(id)
+    await h.tick()
+    expect(h.reads()).toBe(1)
+    h.stop()
+  })
+
+  it('a stick in view does not block a read (a false stick must never stop the boxes)', async () => {
+    const tips = new TipBuffer()
+    const h = harness(tips)
+    const id = keepPointing(tips, 'stick')
+    h.replies.push(fraction)
+    await h.tick()
+    expect(h.reads()).toBe(1)
+    clearInterval(id)
+    h.stop()
+  })
+})
+
+// The frame is 64x36, so one pixel is one cell of the change check.
+describe('board loop: a laser dot is not ink (pointer masking)', () => {
+  const dotAt = (cx: number, cy: number) => (rgba: Uint8ClampedArray) => {
+    for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) rgba.fill(255, ((cy + dy) * 64 + cx + dx) * 4, ((cy + dy) * 64 + cx + dx) * 4 + 4)
+  }
+  const cell = (cx: number, cy: number) => ({ x: (cx + 1) / 64, y: (cy + 1) / 36 }) // centre of the 2x2 dot
+
+  it('a laser dot alone does not create a pending region', async () => {
+    const tips = new TipBuffer()
+    const h = harness(tips)
+    h.replies.push(fraction)
+    await h.tick()
+    expect(h.pending()).toBeNull()
+    h.cam.paint = dotAt(40, 20)
+    const id = setInterval(() => tips.push({ kind: 'laser', ...cell(40, 20), confidence: 1, t: performance.now() }), 100)
+    await vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS * 3)
+    expect(h.pending()).toBeNull()
+    expect(h.reads()).toBe(1)
+    clearInterval(id)
+    h.stop()
+  })
+
+  it('the same bright spot with no laser seen is real change and is pending', async () => {
+    const h = harness()
+    h.replies.push(fraction)
+    await h.tick()
+    h.cam.paint = dotAt(40, 20)
+    await vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS * 3)
+    expect(h.pending()).not.toBeNull()
+    h.stop()
+  })
+
+  it('a laser on the very first frame leaves no ghost behind when it goes away', async () => {
+    const tips = new TipBuffer()
+    const h = harness(tips)
+    h.cam.paint = dotAt(40, 20)
+    const id = setInterval(() => tips.push({ kind: 'laser', ...cell(40, 20), confidence: 1, t: performance.now() }), 100)
+    h.replies.push(fraction)
+    await h.tick()
+    expect(h.reads()).toBe(1)
+    clearInterval(id)
+    h.cam.paint = null // laser off
+    await vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS * 3)
+    expect(h.pending()).toBeNull()
+    h.stop()
+  })
+
+  it('a moving laser does not prevent settle: new ink is still read', async () => {
+    const tips = new TipBuffer()
+    const h = harness(tips)
+    h.replies.push(fraction)
+    await h.tick()
+    expect(h.reads()).toBe(1)
+    // The laser wanders the whole time; a new position on every check.
+    let step = 0
+    const move = () => {
+      step++
+      const cx = 5 + ((step * 7) % 50), cy = 5 + ((step * 5) % 25)
+      h.cam.paint = dotAt(cx, cy)
+      tips.push({ kind: 'laser', ...cell(cx, cy), confidence: 1, t: performance.now() })
+    }
+    move()
+    const id = setInterval(move, 100)
+    await vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS * 3)
+    expect(h.reads()).toBe(1) // a laser alone starts no read
+    h.cam.scene = 90 // the teacher has written something
+    h.replies.push(fraction)
+    await h.tick()
+    await h.tick()
+    expect(h.reads()).toBe(2)
+    clearInterval(id)
     h.stop()
   })
 })

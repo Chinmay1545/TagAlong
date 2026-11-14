@@ -6,8 +6,14 @@ import type { Box, Resolution, Term } from '../core/types'
 import { startCamera } from '../vision/camera'
 import { keepScreenAwake } from '../vision/wakeLock'
 import { startHandTracker } from '../vision/handTracker'
+import { startToolTracker } from '../vision/toolTracker'
+import type { HandInfo } from '../vision/stick'
+import { pointersLabel, toolsFor } from '../vision/tools'
 import { loadFixture } from '../board/boardClient'
-import { boardMode, stageFor, mouseToBoard } from '../board/mode'
+import { boardMode, stageFor } from '../board/mode'
+import { activePointer, kindOf } from '../vision/pointer'
+import { createMousePointer } from '../vision/mousePointer'
+import { drawPointerDot } from './pointerDot'
 import { startBoardLoop, type BoardLoop } from '../board/boardLoop'
 import { createLive } from '../live/live'
 import { createWhisperPlayer } from '../audio/whisper'
@@ -43,6 +49,8 @@ const stage = stageFor(boardMode(location.search), new URLSearchParams(location.
 // (the .mirror class), so the overlay must be drawn in that same displayed space. When off,
 // flipX is the identity. Data stays unmirrored either way; ONLY drawing goes through this flip.
 const mirror = stage.mirror
+// Laser and stick detectors run only when the link asks for them (?laser=1, ?stick=1).
+const tools = toolsFor(location.search)
 const flipX = (x: number, w = 0): number => (mirror ? 1 - (x + w) : x)
 
 function drawBox(ctx: CanvasRenderingContext2D, b: Box, W: number, H: number) {
@@ -122,6 +130,8 @@ export function JudgeScreen() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const tipsRef = useRef(new TipBuffer())
+  const mouseRef = useRef(createMousePointer(p => tipsRef.current.push(p)))
+  useEffect(() => () => mouseRef.current.stop(), [])
   const termsRef = useRef<Term[]>([])
   const resolvedRef = useRef<Term[]>([])
   const boardLoopRef = useRef<BoardLoop | null>(null)
@@ -208,9 +218,11 @@ export function JudgeScreen() {
           video.srcObject = null
           return
         }
-        const stop = await startHandTracker(video, s => tipsRef.current.push(s))
+        let hand: HandInfo | null = null
+        const stop = await startHandTracker(video, s => tipsRef.current.push(s), h => { hand = h })
         if (cancelled) { stop(); return }
-        stopTracker = stop
+        const stopTools = startToolTracker(video, p => tipsRef.current.push(p), () => hand, tools) // laser dot and stick tip, if switched on
+        stopTracker = () => { stop(); stopTools() }
         if (stage.boardLoop) boardLoopRef.current = startBoardLoop(video, tipsRef.current, setTerms)
       } catch (e) {
         if (!cancelled) setCamError((e as Error).message)
@@ -220,7 +232,7 @@ export function JudgeScreen() {
     const stats = setInterval(() => {
       const now = performance.now()
       liveRef.current.checkHeld() // gives up on held words that waited too long
-      setFps(tipsRef.current.window(now - 1000, now).length)
+      setFps(tipsRef.current.window(now - 1000, now).filter(s => kindOf(s) === 'finger').length)
       const at = boardAtRef.current
       setBoardAgo(fixture ? 'fixture' : at === null ? 'none' : `${((now - at) / 1000).toFixed(0)}s ago`)
     }, 500)
@@ -274,19 +286,9 @@ export function JudgeScreen() {
         drawBox(ctx, t.box, W, H)
         drawLabel(ctx, t.phrase, x, y - 4, on ? hue : null, small)
       }
-      const all = tipsRef.current.all()
-      const last = all[all.length - 1]
-      const tip = last && now - last.t < 500 ? last : null
+      const tip = activePointer(tipsRef.current.all(), now) // laser, then stick, then finger
       if (signalRef.current && !reduceMotion?.matches) drawSignal(ctx, signalRef.current, tip, now, W, H)
-      if (tip) {
-        ctx.fillStyle = '#fafafa'
-        ctx.strokeStyle = '#09090b'
-        ctx.lineWidth = 2
-        ctx.beginPath()
-        ctx.arc(flipX(tip.x) * W, tip.y * H, 6, 0, Math.PI * 2)
-        ctx.fill()
-        ctx.stroke()
-      }
+      if (tip) drawPointerDot(ctx, tip, W, H, flipX)
       raf = requestAnimationFrame(draw)
     }
     raf = requestAnimationFrame(draw)
@@ -298,10 +300,9 @@ export function JudgeScreen() {
     if (transcriptRef.current.addResolution(r)) setSegs(transcriptRef.current.segments()) // a held word joined an earlier sentence
     bcRef.current.send(resolutionMsg(r, ms, !whisperRef.current))
     resolvedRef.current = r.terms
-    const tips = tipsRef.current.all()
-    const tip = tips[tips.length - 1]
     const now = performance.now()
-    signalRef.current = { at: now, terms: r.terms, tip: tip && now - tip.t < 500 ? { x: tip.x, y: tip.y } : null, muted: ms === null }
+    const tip = activePointer(tipsRef.current.all(), now)
+    signalRef.current = { at: now, terms: r.terms, tip: tip && { x: tip.x, y: tip.y }, muted: ms === null }
     const phrase = r.terms.map(t => t.phrase).join(', ')
     const line = !r.terms.length ? `${r.word.word} → silent`
       : ms === null ? `${r.word.word} → ${phrase} · muted`
@@ -413,7 +414,7 @@ export function JudgeScreen() {
     const fallback = () => {
       if (dead || web) return
       mic?.stop(); ws?.close(); mic = ws = null
-      web = startWebSpeech(items => live.handleItems(items, null), t => onFinal('web')(t), () => { cleanup(); stopSpeechRef.current = null; setSpeech('unavailable') })
+      web = startWebSpeech(items => live.handleItems(items, null, true), t => onFinal('web')(t), () => { cleanup(); stopSpeechRef.current = null; setSpeech('unavailable') })
       setSpeech(web ? 'web speech' : 'unavailable')
       if (!web) stopSpeechRef.current = null
     }
@@ -446,16 +447,13 @@ export function JudgeScreen() {
       <div className="grain" aria-hidden="true" />
       <header className="masthead rise" style={step(0)}>
         <div className="wordmark"><span className="dot" aria-hidden="true" />THIS &amp; THAT</div>
-        <div className="status mono">board · {boardAgo}<span className="status-gap" />speech · {speechLabel}<span className="status-gap" /><a className="student-link" href="/?student=1" target="student" onClick={e => { e.preventDefault(); window.open('/?student=1', 'student', 'popup,width=1280,height=800') }} title="Opens in its own window; keep this window visible so hand tracking keeps running">Open student view</a></div>
+        <div className="status mono">board · {boardAgo}<span className="status-gap" />speech · {speechLabel}<span className="status-gap" />pointers · {pointersLabel(tools, !!stage.photo)}<span className="status-gap" /><a className="student-link" href="/?student=1" target="student" onClick={e => { e.preventDefault(); window.open('/?student=1', 'student', 'popup,width=1280,height=800') }} title="Opens in its own window; keep this window visible so hand tracking keeps running">Open student view</a></div>
       </header>
       <Readiness />
       <section className="stage-wrap">
         <div className="viewfinder rise" style={step(1)}>
-          <div className="stage" onPointerMove={stage.photo ? e => {
-            // Demo: the mouse points at the saved photo (the camera still tracks a real hand too).
-            const p = mouseToBoard(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect())
-            if (p) tipsRef.current.push({ t: performance.now(), ...p })
-          } : undefined}>
+          {/* Demo: the mouse points at the saved photo (the camera still tracks a real hand when the mouse is off the photo). */}
+          <div className="stage" onPointerMove={stage.photo ? e => mouseRef.current.move(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect()) : undefined} onPointerLeave={stage.photo ? () => mouseRef.current.leave() : undefined}>
             <video ref={videoRef} className={mirror ? 'mirror' : stage.photo ? 'behind-photo' : undefined} playsInline muted />
             {stage.photo && <img className="demo-photo" src={stage.photo} alt="Saved demo board" />}
             <canvas ref={canvasRef} />
