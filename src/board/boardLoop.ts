@@ -1,6 +1,6 @@
 import type { Box, Term } from '../core/types'
 import type { TipBuffer } from '../core/tipBuffer'
-import { BOARD_INTERVAL_MS, EMPTY_READS_TO_CLEAR, HAND_RECENT_MS, LASER_MASK_MS, SETTLE_MS } from '../core/config'
+import { BOARD_INTERVAL_MS, EMPTY_READS_TO_CLEAR, HAND_RECENT_MS, IDLE_REREAD_MS, LASER_MASK_MS, SETTLE_MS } from '../core/config'
 import { changedRegion, frameChanged, hideCells, toGraySmall } from '../core/frameDiff'
 import { kindOf } from '../vision/pointer'
 import { readBoard } from './boardClient'
@@ -34,11 +34,14 @@ export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms
   let lastSeen: Uint8Array | null = null // previous check's frame
   let stillTicks = 0 // checks in a row with no change
   let reading: Box | null = null // changed area of the read in flight
+  let confirm = false // an empty read must be confirmed by a second read, whether or not the picture changes again
+  let ticksSinceRead = 0 // counted in checks (exact under any clock), for the idle safety re-read
   // Every box gets its own phrase: the whisper player drops a phrase that is already sounding.
   const show = (terms: Term[]) => { current = uniquePhrases(terms); onTerms(current) }
 
   const tick = () => {
     if (inFlight || video.readyState < 2 || !video.videoWidth) return
+    ticksSinceRead++
     const { videoWidth: w, videoHeight: h } = video
     canvas.width = w
     canvas.height = h
@@ -53,9 +56,12 @@ export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms
     stillTicks = lastSeen !== null && !frameChanged(lastSeen, gray) ? stillTicks + 1 : 0
     lastSeen = gray
     if (!isSettled(stillTicks)) return
-    const changed = lastRead === null || frameChanged(lastRead, gray)
+    const idle = ticksSinceRead * BOARD_INTERVAL_MS >= IDLE_REREAD_MS // nothing read for a while: read anyway
+    const changed = lastRead === null || confirm || idle || frameChanged(lastRead, gray)
     if (!shouldReadBoard(now, tips.lastCoverAt(), changed)) return
     inFlight = true
+    confirm = false
+    ticksSinceRead = 0
     reading = (lastRead && changedRegion(lastRead, gray)) || FULL
     const gen = generation
     const before = current
@@ -71,7 +77,7 @@ export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms
         })
         if (!live()) return
         emptyReads = terms.length ? 0 : emptyReads + 1
-        if (emptyReads > 0 && emptyReads < EMPTY_READS_TO_CLEAR) return // lastRead untouched, so the next tick re-reads to confirm
+        if (emptyReads > 0 && emptyReads < EMPTY_READS_TO_CLEAR) { confirm = true; return } // re-read on the next settled check to confirm
         lastRead = gray
         show(mergeTerms(before, terms, { dropMissing: true })) // same term, same box: no re-drawn boxes on a wobble
       } catch (e) {
@@ -89,7 +95,7 @@ export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms
   return {
     stop: () => { stopped = true; clearInterval(id) },
     // Reset button: clear the boxes now and forget the last frame, so the next tick reads the board from scratch.
-    reset: () => { generation++; lastRead = null; emptyReads = 0; show([]) },
+    reset: () => { generation++; lastRead = null; emptyReads = 0; confirm = false; show([]) },
     pendingRegion: () => reading ?? (lastSeen === null ? null : lastRead === null ? FULL : changedRegion(lastRead, lastSeen)),
   }
 }

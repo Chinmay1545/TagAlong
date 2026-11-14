@@ -1,17 +1,25 @@
-import { FRAME_DIFF_THRESHOLD } from './config'
+import { FRAME_DIFF_THRESHOLD, MIN_CHANGED_CELLS } from './config'
 import type { Box } from './types'
 
 const W = 64, H = 36
 
-// Nearest-neighbour downscale to 64x36 luma.
+// Downscale to 64x36 luma by AVERAGING each cell (not one sample per cell, which misses thin marker
+// strokes that fall between sample points). Strided for speed: ~8x8 samples per cell, every pixel on
+// small frames, so a stroke a few pixels wide always lands on samples.
 export function toGraySmall(rgba: Uint8ClampedArray, w: number, h: number): Uint8Array {
   const out = new Uint8Array(W * H)
+  const step = Math.max(1, Math.floor(Math.min(w / W, h / H) / 8))
   for (let y = 0; y < H; y++) {
-    const sy = Math.min(h - 1, Math.floor(((y + 0.5) * h) / H))
+    const y0 = Math.floor((y * h) / H), y1 = Math.max(y0 + 1, Math.floor(((y + 1) * h) / H))
     for (let x = 0; x < W; x++) {
-      const sx = Math.min(w - 1, Math.floor(((x + 0.5) * w) / W))
-      const i = (sy * w + sx) * 4
-      out[y * W + x] = Math.round(0.299 * rgba[i] + 0.587 * rgba[i + 1] + 0.114 * rgba[i + 2])
+      const x0 = Math.floor((x * w) / W), x1 = Math.max(x0 + 1, Math.floor(((x + 1) * w) / W))
+      let sum = 0, n = 0
+      for (let sy = y0; sy < y1 && sy < h; sy += step) for (let sx = x0; sx < x1 && sx < w; sx += step) {
+        const i = (sy * w + sx) * 4
+        sum += 0.299 * rgba[i] + 0.587 * rgba[i + 1] + 0.114 * rgba[i + 2]
+        n++
+      }
+      out[y * W + x] = n ? Math.round(sum / n) : 0
     }
   }
   return out
@@ -60,9 +68,18 @@ export function changedRegion(a: Uint8Array, b: Uint8Array, cellDiff = CELL_DIFF
   return x1 < 0 ? null : { x: x0 / W, y: y0 / H, w: (x1 - x0 + 1) / W, h: (y1 - y0 + 1) / H }
 }
 
-export function frameChanged(a: Uint8Array, b: Uint8Array, threshold = FRAME_DIFF_THRESHOLD): boolean {
+// Changed if the whole picture moved (average change above `threshold`: a person, the camera, the lights)
+// OR at least MIN_CHANGED_CELLS cells changed locally by more than CELL_DIFF (new ink: "x = 5" and "x = 6"
+// on a big board move the average by ~1 but darken ~10 cells). The local count first removes the frame's
+// median shift, so camera auto-exposure brightening everything a little does not count as ink.
+export function frameChanged(a: Uint8Array, b: Uint8Array, threshold = FRAME_DIFF_THRESHOLD, minCells = MIN_CHANGED_CELLS): boolean {
   if (a.length !== b.length) return true
+  const d = new Int16Array(a.length)
   let sum = 0
-  for (let i = 0; i < a.length; i++) sum += Math.abs(a[i] - b[i])
-  return sum / a.length > threshold
+  for (let i = 0; i < a.length; i++) { d[i] = b[i] - a[i]; sum += Math.abs(d[i]) }
+  if (sum / a.length > threshold) return true
+  const shift = Int16Array.from(d).sort()[d.length >> 1]
+  let cells = 0
+  for (let i = 0; i < d.length; i++) if (Math.abs(d[i] - shift) > CELL_DIFF && ++cells >= minCells) return true
+  return false
 }
