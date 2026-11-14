@@ -68,6 +68,17 @@ export function termAt(terms: Term[], x: number, y: number, maxDist = MAX_DIST, 
       pickArea = area
     }
   }
+  if (pick && tie > 0) {
+    // Two separate terms of the group about as near (a finger in the gap between them): cannot tell, stay silent.
+    const p = pick
+    const nested = (a: Term, b: Term) => boxDistance(a.box, b.box.x, b.box.y) <= EPS && boxDistance(a.box, b.box.x + b.box.w, b.box.y + b.box.h) <= EPS
+    for (const term of terms) {
+      if (term === p || term === best || term.box.w * term.box.h >= bestArea - EPS || nested(term, p) || nested(p, term)) continue
+      if (boxDistance(best.box, term.box.x + term.box.w / 2, term.box.y + term.box.h / 2) > EPS) continue
+      const d = boxDistance(term.box, x, y)
+      if (d <= reach && d - pickD < tie) return null
+    }
+  }
   return pick ?? best
 }
 

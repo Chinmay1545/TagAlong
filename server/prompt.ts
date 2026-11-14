@@ -15,10 +15,13 @@ Example 1: 2x(x+3) over 2x, then 3x + 5 = 20:
 2x|top|237|211|95|150
 (x + 3)|top|439|211|231|153
 2x|bottom|439|560|96|149
+3x|left|700|300|60|80
+5|left|770|300|30|80
+20|right|860|300|60|80
 2x(x + 3)|numerator|237|211|433|153
 2x|denominator|439|560|96|149
 \\frac{2x(x + 3)}{2x}|fraction|219|211|562|498
-3x + 5|lhs|700|300|120|80
+3x + 5|lhs|700|300|100|80
 20|rhs|860|300|60|80
 3x + 5 = 20|equation|700|300|220|80
 Example 2: (x-3)/(x+1) = 2/x, terms first, then the groups:
