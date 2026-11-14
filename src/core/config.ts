@@ -25,3 +25,6 @@ export const LASER_COLOURS: readonly ('red' | 'green')[] = ['red', 'green'] // l
 export const LASER_STATIC_WEAK_MS = 3000 // over-exposed board: a red/green dot that has not moved for this long is ink, not a laser
 export const LASER_STATIC_MS = 20000 // any dot that has not moved at all for this long is a fixed light, not a laser
 export const LASER_MASK_MS = 400 // the board loop hides laser dots seen this recently from its change check
+export const APP_NAME = 'THIS & THAT'
+export const DEFAULT_CLASS = 'Math 201'
+export const UNDO_MARK_MS = 5000

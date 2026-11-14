@@ -20,6 +20,8 @@ export function createTranscript() {
   return {
     // "I didn't understand this" (t: performance.now()). Returns how many bookmarks there are now.
     addBookmark(t: number): number { bookmarks.push(t); return bookmarks.length },
+    // Takes back one bookmark made at exactly time t. Returns how many bookmarks there are now.
+    removeBookmark(t: number): number { const i = bookmarks.indexOf(t); if (i >= 0) bookmarks.splice(i, 1); return bookmarks.length },
     // Usually a resolution comes before its sentence's final and waits in `pending`. A held "this" can be
     // whispered after its sentence ended: it then joins that segment (true = an existing segment changed).
     addResolution(r: Resolution): boolean {

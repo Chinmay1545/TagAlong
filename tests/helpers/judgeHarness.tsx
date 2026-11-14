@@ -16,7 +16,7 @@ export const STAGE = { width: 800, height: 400 }
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 // search: the page address after "/", for example "?demo=1". The mode is read when the screen loads.
-export async function mountJudge(search = '') {
+export async function mountJudge(search = '', beforeRender?: () => void) {
   vi.resetModules()
   window.history.replaceState({}, '', '/' + search)
 
@@ -68,6 +68,7 @@ export async function mountJudge(search = '') {
   Object.defineProperty(HTMLCanvasElement.prototype, 'clientWidth', { configurable: true, get: () => STAGE.width })
   Object.defineProperty(HTMLCanvasElement.prototype, 'clientHeight', { configurable: true, get: () => STAGE.height })
 
+  beforeRender?.() // a test may replace the default fetch stub or add a WebSocket here
   const { JudgeScreen } = await import('../../src/ui/JudgeScreen')
   const view = render(<JudgeScreen />)
   await act(() => sleep(30)) // startup: fixture load, camera, trackers

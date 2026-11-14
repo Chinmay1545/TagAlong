@@ -55,3 +55,16 @@ describe('transcript bookmarks', () => {
     expect(text).toBe('Said: first\nMeant: first\n\nMarked: did not understand\nSaid: second\nMeant: second\n')
   })
 })
+
+describe('removeBookmark', () => {
+  it('removeBookmark takes one mark away and returns the count', () => {
+    const tr = createTranscript()
+    tr.addFinal('first', 0, 1000)
+    tr.addBookmark(500)
+    expect(tr.addBookmark(600)).toBe(2)
+    expect(tr.removeBookmark(600)).toBe(1)
+    expect(tr.segments()[0].bookmarked).toBe(true)
+    expect(tr.removeBookmark(500)).toBe(0)
+    expect(tr.segments()[0].bookmarked).toBe(false)
+  })
+})

@@ -21,7 +21,9 @@ import { connectTranscribe } from '../speech/transcribeClient'
 import { startMic } from '../speech/mic'
 import { startWebSpeech } from '../speech/webSpeech'
 import type { WordItem } from '../speech/words'
-import { LATENCY_LOG_MAX } from '../core/config'
+import { LATENCY_LOG_MAX, DEFAULT_CLASS, UNDO_MARK_MS } from '../core/config'
+import { createRelay, relayUrl, type RelayStatus } from '../live/relay'
+import { RoomPanel } from './RoomPanel'
 import { createTranscript, substitute, type Segment } from '../transcript/store'
 import { median, applyMark, finalTimes, type Row, type Tally } from './judgeHelpers'
 import { TranscriptPanel } from './TranscriptPanel'
@@ -30,7 +32,7 @@ import { ReportCard } from './ReportCard'
 import { NotesPanel } from './NotesPanel'
 import { ModeSwitch, PointerLog, Readout, StatsStrip, type Last } from './Panels'
 import { Readiness } from './Readiness'
-import { createBroadcaster, resolutionMsg, finalMsg, boardMsg, modeMsg, subscribe, markedMsg, assistMsg, noticeMsg } from '../live/broadcast'
+import { createBroadcaster, resolutionMsg, finalMsg, boardMsg, modeMsg, subscribe, markedMsg, type Msg, assistMsg, noticeMsg } from '../live/broadcast'
 import { askScene } from '../live/assist'
 import { isClassEnding, endingNotice } from '../live/classEnding'
 import { grabJpeg } from '../vision/grabFrame'
@@ -172,12 +174,35 @@ export function JudgeScreen() {
   useEffect(() => () => bcRef.current.close(), [])
   const boardRef = useRef<Resolution | null>(null)
   const askingRef = useRef(false)
-  useEffect(() => subscribe(m => {
+  const className = new URLSearchParams(location.search).get('class') || DEFAULT_CLASS
+  const [joinUrl, setJoinUrl] = useState<string | null>(null)
+  const [listeners, setListeners] = useState(0)
+  const [relayStatus, setRelayStatus] = useState<RelayStatus | 'off'>('off')
+  const relayRef = useRef<ReturnType<typeof createRelay> | null>(null)
+  // Everything the laptop says goes to the laptop's own student tab and to every phone in the room.
+  const sendAll = (m: Msg) => { bcRef.current.send(m); relayRef.current?.send(m) }
+  const sendAllRef = useRef(sendAll)
+  sendAllRef.current = sendAll
+  const marksRef = useRef(new Map<string, number[]>()) // sender -> times of its bookmarks ('tab' = laptop student window)
+  // One handler for the laptop tab (reply = BroadcastChannel) and for phones (reply = targeted relay send).
+  const handleStudent = (m: Msg, from: string, reply: (m: Msg) => void) => {
     if (m.type === 'bookmark') {
       // "I didn't get this": marks the sentence being said now; the teacher sees it in the transcript.
-      const count = transcriptRef.current.addBookmark(performance.now())
+      const t = performance.now()
+      const count = transcriptRef.current.addBookmark(t)
+      marksRef.current.set(from, [...(marksRef.current.get(from) ?? []), t])
       setSegs(transcriptRef.current.segments())
-      bcRef.current.send(markedMsg(count))
+      reply(markedMsg(count))
+      return
+    }
+    if (m.type === 'unmark') {
+      const mine = marksRef.current.get(from) ?? []
+      const t = mine[mine.length - 1]
+      if (t === undefined || performance.now() - t > UNDO_MARK_MS + 2000) return
+      marksRef.current.set(from, mine.slice(0, -1))
+      const count = transcriptRef.current.removeBookmark(t)
+      setSegs(transcriptRef.current.segments())
+      reply(markedMsg(count, true))
       return
     }
     if (m.type === 'ask') {
@@ -185,15 +210,46 @@ export function JudgeScreen() {
       askingRef.current = true
       const photo = document.querySelector<HTMLImageElement>('img.demo-photo')
       void askScene(() => grabJpeg(photo ?? videoRef.current!))
-        .then(text => bcRef.current.send(assistMsg(text)))
+        .then(text => reply(assistMsg(text)))
         .finally(() => { askingRef.current = false })
       return
     }
     if (m.type !== 'hello') return
-    bcRef.current.send(modeMsg(!whisperRef.current))
-    if (boardRef.current) bcRef.current.send(boardMsg(boardRef.current))
-  }), [])
+    reply(modeMsg(!whisperRef.current))
+    if (boardRef.current) reply(boardMsg(boardRef.current))
+  }
+  const handleStudentRef = useRef(handleStudent)
+  handleStudentRef.current = handleStudent
+  useEffect(() => subscribe(m => handleStudentRef.current(m, 'tab', r => bcRef.current.send(r))), [])
 
+  // Open this class's room on the server; phones that scan the QR join it. If that fails, only phones are lost.
+  useEffect(() => {
+    let dead = false
+    let relay: ReturnType<typeof createRelay> | null = null
+    void (async () => {
+      try {
+        const res = await fetch('/api/rooms', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: className }) })
+        if (!res.ok) return
+        const { token } = await res.json() as { token: string }
+        if (dead) return
+        setJoinUrl(`${location.origin}/c/${token}?n=${encodeURIComponent(className)}`)
+        relay = createRelay({
+          url: relayUrl(location, { role: 'teacher', room: token, name: className }),
+          onStatus: setRelayStatus,
+          onMessage: (m: Msg & { from?: string; count?: number }) => {
+            if ((m as { type: string }).type === 'listeners') setListeners(m.count ?? 0)
+            else if (typeof m.from === 'string') {
+              const from = m.from
+              handleStudentRef.current(m, from, r => relayRef.current?.send({ ...r, to: from }))
+            }
+          },
+        })
+        relayRef.current = relay
+        setRelayStatus(relay.status())
+      } catch { /* no room: the laptop works on its own */ }
+    })()
+    return () => { dead = true; relay?.close(); relayRef.current = null }
+  }, [])
 
   const prepare = (terms: Term[]) => { void playerRef.current.prepare(terms) }
 
@@ -318,7 +374,7 @@ export function JudgeScreen() {
   // Resolutions (from P, __tt or live speech) -> overlay highlight, log line, latency median.
   useEffect(() => liveRef.current.onResolution((r, ms) => {
     if (transcriptRef.current.addResolution(r)) setSegs(transcriptRef.current.segments()) // a held word joined an earlier sentence
-    bcRef.current.send(resolutionMsg(r, ms, !whisperRef.current))
+    sendAllRef.current(resolutionMsg(r, ms, !whisperRef.current))
     resolvedRef.current = r.terms
     const now = performance.now()
     const tip = activePointer(tipsRef.current.all(), now)
@@ -338,7 +394,7 @@ export function JudgeScreen() {
 
   useEffect(() => liveRef.current.onBoardQuery((r, ms) => {
     boardRef.current = r
-    bcRef.current.send(boardMsg(r))
+    sendAllRef.current(boardMsg(r))
     const line = !r.terms.length ? 'board → empty'
       : `board → ${r.terms.length} terms · ${ms === null ? 'muted' : `${(ms / 1000).toFixed(2)} s`}`
     setRows(rs => (rowsRef.current = [{ id: ++rowIdRef.current, line }, ...rs].slice(0, LOG_MAX)))
@@ -353,15 +409,15 @@ export function JudgeScreen() {
     const seg = all[all.length - 1]
     if (!seg) return
     const meant = substitute(seg.text, seg.resolutions)
-    bcRef.current.send(finalMsg(seg.text, meant))
-    if (isClassEnding(seg.text)) bcRef.current.send(noticeMsg(endingNotice(meant))) // only when it matters
+    sendAllRef.current(finalMsg(seg.text, meant))
+    if (isClassEnding(seg.text)) sendAllRef.current(noticeMsg(endingNotice(meant))) // only when it matters
   }), [])
 
   const toggleWhisper = () => {
     const on = !whisperRef.current
     whisperRef.current = on
     setWhisperOn(on)
-    bcRef.current.send(modeMsg(!on))
+    sendAllRef.current(modeMsg(!on))
     if (on) playerRef.current.unlock()
     liveRef.current.setWhisperEnabled(on)
   }
@@ -472,6 +528,7 @@ export function JudgeScreen() {
         <div className="wordmark"><span className="dot" aria-hidden="true" />THIS &amp; THAT</div>
         <div className="status mono">board · {boardAgo}<span className="status-gap" />speech · {speechLabel}<span className="status-gap" />pointers · {pointersLabel(tools, !!stage.photo)}<span className="status-gap" /><a className="student-link" href="/?student=1" target="student" onClick={e => { e.preventDefault(); window.open('/?student=1', 'student', 'popup,width=1280,height=800') }} title="Opens in its own window; keep this window visible so hand tracking keeps running">Open student view</a></div>
       </header>
+      <RoomPanel name={className} joinUrl={joinUrl} listeners={listeners} relay={relayStatus} />
       <Readiness />
       <section className="stage-wrap">
         <div className="viewfinder rise" style={step(1)}>
