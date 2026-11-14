@@ -136,7 +136,7 @@ export function RoomStudentView({ room, token, deps, autoStart, startedText, lab
     return (
       <main className="rs rs-start">
         <div className="rs-decor" aria-hidden="true">
-          <span className="rs-kicker"><span className="rs-dot" />TagAlong</span>
+          <span className="rs-kicker"><span className="rs-dot" />THIS &amp; THAT</span>
           <span className="rs-orb" />
           <span className="rs-hint">Each term the teacher points at is whispered here.</span>
         </div>

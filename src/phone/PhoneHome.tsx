@@ -97,7 +97,7 @@ export function PhoneHome({ deps }: { deps?: Partial<Deps> }) {
   if (all.length === 0) {
     return (
       <main className="rs rs-home rs-none">
-        <div className="rs-decor" aria-hidden="true"><span className="rs-kicker"><span className="rs-dot" />TagAlong</span><span className="rs-orb" /></div>
+        <div className="rs-decor" aria-hidden="true"><span className="rs-kicker"><span className="rs-dot" />THIS &amp; THAT</span><span className="rs-orb" /></div>
         <p className="rs-empty">Open the class link from your disability office once.</p>
       </main>
     )
@@ -114,7 +114,7 @@ export function PhoneHome({ deps }: { deps?: Partial<Deps> }) {
       ) : (
         <main className={`rs rs-home rs-${phase}`}>
           <div className="rs-decor" aria-hidden="true">
-            <span className="rs-kicker"><span className="rs-dot" />TagAlong<span className="rs-count">{phase === 'choose' ? `${live.length} live now` : `${all.length} classes saved`}</span></span>
+            <span className="rs-kicker"><span className="rs-dot" />THIS &amp; THAT<span className="rs-count">{phase === 'choose' ? `${live.length} live now` : `${all.length} classes saved`}</span></span>
             <span className="rs-orb" />
             {phase === 'idle' && <span className="rs-hint">Joins your class the moment it starts.</span>}
           </div>
