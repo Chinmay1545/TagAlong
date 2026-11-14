@@ -34,18 +34,106 @@ async function createText(client: MessagesClient, params: Anthropic.MessageCreat
   return text
 }
 
-export function makeAnthropicCallModel(client: MessagesClient, model = ANTHROPIC_DEFAULT_MODEL) {
-  return (jpeg: Buffer): Promise<string> => createText(client, {
-    model,
-    max_tokens: 16000,
-    messages: [{
-      role: 'user',
-      content: [
-        { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: jpeg.toString('base64') } },
-        { type: 'text', text: BOARD_PROMPT },
-      ],
-    }],
-  }, 'read the board')
+// Board reads are latency-bound. Low effort means less thinking before the first line; fast mode
+// (premium price) writes the reply faster. Together they took the first box from ~5.5 s to ~1 s.
+export type BoardEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+export type BoardTuning = { effort: BoardEffort; speed: 'fast' | 'standard' }
+export const DEFAULT_BOARD_TUNING: BoardTuning = { effort: 'low', speed: 'fast' }
+const EFFORTS: readonly string[] = ['low', 'medium', 'high', 'xhigh', 'max']
+const FAST_MODE_MODELS = new Set(['claude-opus-5-5']) // fast mode is a per-model feature; others 400 on `speed`
+
+export function boardTuningFromEnv(env: Record<string, string | undefined>): BoardTuning {
+  const effort = env.ANTHROPIC_BOARD_EFFORT?.trim() ?? ''
+  const speed = env.ANTHROPIC_BOARD_SPEED?.trim() ?? ''
+  return {
+    effort: EFFORTS.includes(effort) ? effort as BoardEffort : DEFAULT_BOARD_TUNING.effort,
+    speed: speed === 'fast' || speed === 'standard' ? speed : DEFAULT_BOARD_TUNING.speed,
+  }
+}
+
+const boardParams = (model: string, jpeg: Buffer, tuning: BoardTuning): Anthropic.MessageCreateParamsNonStreaming => ({
+  model,
+  max_tokens: 16000,
+  output_config: { effort: tuning.effort },
+  ...(tuning.speed === 'fast' && FAST_MODE_MODELS.has(model) ? { speed: 'fast' as const } : {}),
+  messages: [{
+    role: 'user',
+    content: [
+      { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: jpeg.toString('base64') } },
+      { type: 'text', text: BOARD_PROMPT },
+    ],
+  }],
+})
+
+// Fast mode has its own rate limit: on a 429 there, retry once at standard speed instead of failing the read.
+const isFast = (p: Anthropic.MessageCreateParamsNonStreaming) => 'speed' in p
+const standardSpeed = (p: Anthropic.MessageCreateParamsNonStreaming): Anthropic.MessageCreateParamsNonStreaming => {
+  const { speed: _speed, ...rest } = p as Anthropic.MessageCreateParamsNonStreaming & { speed?: string }
+  return rest
+}
+
+export function makeAnthropicCallModel(client: MessagesClient, model = ANTHROPIC_DEFAULT_MODEL, tuning: BoardTuning = DEFAULT_BOARD_TUNING) {
+  const withFallback: MessagesClient = {
+    messages: {
+      create: async (p) => {
+        try { return await client.messages.create(p) } catch (e) {
+          if (isFast(p) && e instanceof Anthropic.RateLimitError) return client.messages.create(standardSpeed(p))
+          throw e
+        }
+      },
+    },
+  }
+  return (jpeg: Buffer): Promise<string> => createText(withFallback, boardParams(model, jpeg, tuning), 'read the board')
+}
+
+// Same SDK error mapping as createText, for errors thrown while streaming.
+function readable(e: unknown): unknown {
+  if (e instanceof Anthropic.AuthenticationError) return new Error('Anthropic rejected the key (check ANTHROPIC_API_KEY in .env)')
+  if (e instanceof Anthropic.RateLimitError) return new Error('Anthropic rate limit hit, retry shortly')
+  if (e instanceof Anthropic.APIConnectionError) return new Error(`could not reach Anthropic: ${e.message}`)
+  if (e instanceof Anthropic.APIError) return new Error(`Anthropic API error ${e.status}: ${e.message}`)
+  return e
+}
+
+type StreamClient = {
+  messages: { stream: (p: Anthropic.MessageCreateParamsNonStreaming) => AsyncIterable<Anthropic.MessageStreamEvent> & { finalMessage(): Promise<{ stop_reason: string | null }> } }
+}
+
+// Streaming board reader: yields the reply text as it is generated, so terms can be drawn before the reply ends.
+export function makeAnthropicStreamModel(client: StreamClient, model = ANTHROPIC_DEFAULT_MODEL, tuning: BoardTuning = DEFAULT_BOARD_TUNING) {
+  return async function* (jpeg: Buffer): AsyncGenerator<string> {
+    try {
+      let params = boardParams(model, jpeg, tuning)
+      let stream = client.messages.stream(params)
+      let sent = false
+      for (;;) {
+        try {
+          for await (const ev of stream) {
+            if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') { sent = true; yield ev.delta.text }
+          }
+          break
+        } catch (e) {
+          // Retry at standard speed only if nothing was shown yet, so no term is drawn twice.
+          if (sent || !isFast(params) || !(e instanceof Anthropic.RateLimitError)) throw e
+          params = standardSpeed(params)
+          stream = client.messages.stream(params)
+        }
+      }
+      const final = await stream.finalMessage()
+      if (final.stop_reason === 'refusal') throw new Error('model refused to read the board')
+      if (final.stop_reason === 'max_tokens') throw new Error('model reply truncated (max_tokens)')
+    } catch (e) { throw readable(e) }
+  }
+}
+
+export function anthropicStreamModelFromEnv(env: Record<string, string | undefined>) {
+  let client: Anthropic | undefined
+  const model = env.ANTHROPIC_MODEL_ID?.trim() || ANTHROPIC_DEFAULT_MODEL
+  const tuning = boardTuningFromEnv(env)
+  return (jpeg: Buffer) => {
+    client ??= new Anthropic({ timeout: 30_000, maxRetries: 1 })
+    return makeAnthropicStreamModel(client as unknown as StreamClient, model, tuning)(jpeg)
+  }
 }
 
 export const ANTHROPIC_NOTES_DEFAULT_MODEL = 'claude-haiku-5-5'
@@ -68,11 +156,12 @@ export function anthropicCallTextFromEnv(env: Record<string, string | undefined>
 }
 
 export function anthropicCallModelFromEnv(env: Record<string, string | undefined>) {
-  // Client created lazily so startup never needs a key; timeout keeps a stuck read from blocking the 3 s board loop forever.
+  // Client created lazily so startup never needs a key; timeout keeps a stuck read from blocking the board loop forever.
   let client: Anthropic | undefined
   const model = env.ANTHROPIC_MODEL_ID?.trim() || ANTHROPIC_DEFAULT_MODEL
+  const tuning = boardTuningFromEnv(env)
   return (jpeg: Buffer) => {
     client ??= new Anthropic({ timeout: 30_000, maxRetries: 1 })
-    return makeAnthropicCallModel(client, model)(jpeg)
+    return makeAnthropicCallModel(client, model, tuning)(jpeg)
   }
 }

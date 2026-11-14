@@ -9,7 +9,15 @@ export function createTranscript() {
   let segs: Segment[] = []
   let pending: Resolution[] = []
   return {
-    addResolution(r: Resolution) { pending.push(r) },
+    // Usually a resolution comes before its sentence's final and waits in `pending`. A held "this" can be
+    // whispered after its sentence ended: it then joins that segment (true = an existing segment changed).
+    addResolution(r: Resolution): boolean {
+      const i = segs.findIndex(s => r.word.t >= s.t0 - SLACK_MS && r.word.t <= s.t1 + SLACK_MS)
+      if (i < 0) { pending.push(r); return false }
+      const s = segs[i]
+      segs[i] = { ...s, resolutions: [...s.resolutions, r].sort((a, b) => a.word.t - b.word.t) }
+      return true
+    },
     addFinal(text: string, t0: number, t1: number) {
       const limit = t1 + SLACK_MS
       const resolutions = pending.filter(r => r.word.t <= limit).sort((a, b) => a.word.t - b.word.t)

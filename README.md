@@ -29,6 +29,8 @@ cp .env.example .env    # then fill in the values you have
 | `NOTES_BUCKET` | Optional existing S3 bucket. Enables the "Copy share link" button (24 hour link, `notes/<uuid>.txt`) |
 | `ANTHROPIC_API_KEY` | Optional. If set, the board is read through the Anthropic API instead of Bedrock, and notes are enabled |
 | `ANTHROPIC_MODEL_ID` | Optional model override for board reads |
+| `ANTHROPIC_BOARD_EFFORT` | Optional thinking effort for board reads: `low` (default, fastest), `medium`, `high`, `xhigh`, `max` |
+| `ANTHROPIC_BOARD_SPEED` | Optional `fast` (default: fast mode, about 2x the price per token, much quicker first box) or `standard`. A rate-limited fast read retries once at standard speed |
 | `ANTHROPIC_NOTES_MODEL_ID` | Optional model override for notes |
 | `POLLY_VOICE`, `POLLY_ENGINE` | Optional Polly voice and engine (`generative` or `neural`) |
 
@@ -57,11 +59,13 @@ aws transcribe create-vocabulary --vocabulary-name this-and-that-math --language
 | `npm test` | Test suite |
 | `npx tsc --noEmit` | Type check |
 | `npm run demo:check` | Scripted check against a running dev server |
+| `node scripts/bench-board.mjs [folder]` | Replays JPEGs (default `public/fixtures`) against `/api/read-board` and prints time to first term and total time per read. Needs a running server with a board model configured |
 
 URL options:
 
-- `?demo=1` loads the saved board and opens the transcript panel. No camera board reads or AWS needed.
-- `?fixture=1` loads the saved board only.
+- `?demo=1` shows the saved board photo with its saved boxes and opens the transcript panel. No camera board reads or AWS needed. Move the mouse over the photo to point at a term, then press `P`.
+- `?fixture=1` same saved photo and boxes, transcript panel closed.
+- Without these (live mode) the stage shows the camera and only boxes read from it.
 - `?mirror=1` mirrors the camera preview (off by default, because the camera faces the board).
 
 ## Keyboard
@@ -84,6 +88,10 @@ URL options:
 7. Show the student view on the second screen. Click "Open student view": it opens in its own window. Keep the judge window visible, because a hidden window stops hand tracking.
 8. Show the Notes (Said vs Meant) and the professor report card.
 9. Close: "Past work needed gloves and raised prints. Ours needs a camera and a browser."
+
+## Board reading
+
+The board is checked for changes every second. Once the picture has stayed still for a second (pen lifted, nobody's hand in view) the frame is sent to the board reader. The model replies with one short line per term (`latex|x|y|w|h`) and the server streams each term to the browser as soon as its line is written, so boxes appear one by one. The spoken phrase ("the x plus 3 on top") is built in code from the LaTeX and the box position. A term that is read again in nearly the same place keeps its box, so a wobbly camera does not redraw everything. If the teacher says "this" at something just written before its box exists, the word is held and whispered when the box arrives (or dropped silently after a few seconds).
 
 ## Troubleshooting
 
