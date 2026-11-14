@@ -16,7 +16,7 @@ const SCOPE: Record<string, string> = {
 // `after`: the words that follow the pointer word, already cut to the ones close enough (live.ts).
 // "whole" counts only as "whole thing" (the largest group); alone it is skipped, so "this whole top part" is top.
 export function scopeFrom(after: string[]): string | null {
-  const ws = after.map(w => w.toLowerCase().replace(/[^a-z]/g, ''))
+  const ws = after.slice(0, 3).map(w => w.toLowerCase().replace(/[^a-z]/g, ''))
   for (let i = 0; i < ws.length; i++) {
     if (ws[i] === 'whole') { if (ws[i + 1] === 'thing') return 'whole'; continue }
     if (SCOPE[ws[i]]) return SCOPE[ws[i]]
