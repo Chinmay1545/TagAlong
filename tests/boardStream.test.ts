@@ -59,6 +59,27 @@ describe('createTermStream (JSON reply)', () => {
   })
 })
 
+describe('createTermStream (compact line reply)', () => {
+  const lines = '2x|237|211|95|150\n\\frac{a}{b}|439|211|231|153\n2x|439|560|96|149'
+  it('emits each line once it is complete; the last line on end()', () => {
+    const s = createTermStream()
+    expect(s.push('2x|237|211|9')).toEqual([])
+    expect(s.push('5|150\n\\frac{a}{b}|439').map(t => t.latex)).toEqual(['2x'])
+    expect(s.push(lines.slice(lines.indexOf('|439|211')))).toHaveLength(1)
+    const rest = s.end()
+    expect(rest.map(t => [t.id, t.latex])).toEqual([[3, '2x']])
+  })
+  it('matches the one-shot parser for any chunk size', () => {
+    for (const size of [1, 4, 13, lines.length]) {
+      const s = createTermStream()
+      const got = []
+      for (let i = 0; i < lines.length; i += size) got.push(...s.push(lines.slice(i, i + size)))
+      got.push(...s.end())
+      expect(got).toEqual(parseBoardResponse(lines))
+    }
+  })
+})
+
 // Fake streaming model: yields `parts` with an await between them.
 const streamOf = (parts: string[], failAfter?: number) => async function* () {
   for (let i = 0; i < parts.length; i++) {
