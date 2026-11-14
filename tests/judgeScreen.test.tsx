@@ -228,3 +228,33 @@ describe('judge screen: a word waiting for its second look is dropped on reset a
     expect(j.log()).toEqual(['this → silent'])
   })
 })
+
+describe('judge screen: board lock and reading indicator', () => {
+  it('F locks the board (pill shown, legend lists it), F again unlocks, Reset unlocks', async () => {
+    const j = await mountJudge('')
+    const pill = () => j.container.querySelector('.vf-lock')!.textContent
+    expect(j.container.querySelector('.kbd-strip')!.textContent).toContain('lock board')
+    expect(pill()).toBe('')
+    await j.key('f')
+    expect(pill()).toBe('Board locked')
+    await j.key('F')
+    expect(pill()).toBe('')
+    await j.key('f')
+    expect(pill()).toBe('Board locked')
+    fireEvent.click([...j.container.querySelectorAll('button')].find(b => b.textContent === 'Reset board')!)
+    expect(pill()).toBe('')
+  })
+  it('shows "Reading the board" (aria-hidden) while a read is in flight', async () => {
+    const j = await mountJudge('')
+    const bar = () => j.container.querySelector('.vf-reading') as HTMLElement
+    expect(bar().getAttribute('aria-hidden')).toBe('true')
+    expect(bar().classList.contains('on')).toBe(false)
+    j.fakes.reading = true
+    await j.wait(600)
+    expect(bar().classList.contains('on')).toBe(true)
+    expect(bar().textContent).toBe('Reading the board')
+    j.fakes.reading = false
+    await j.wait(600)
+    expect(bar().classList.contains('on')).toBe(false)
+  })
+})

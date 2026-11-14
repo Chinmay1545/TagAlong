@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { shouldReadBoard, startBoardLoop } from '../src/board/boardLoop'
+import { BOARD_TICK_MS, READ_SETTLE_MS, isSettled, scaleToMax, shouldReadBoard, startBoardLoop } from '../src/board/boardLoop'
 import { isFixtureMode, loadFixture, readBoard } from '../src/board/boardClient'
 import { TipBuffer } from '../src/core/tipBuffer'
 import type { Term } from '../src/core/types'
@@ -59,9 +59,9 @@ function harness(tips = new TipBuffer()) {
   const shown: Term[][] = []
   vi.useFakeTimers()
   const loop = startBoardLoop(video, tips, t => shown.push(t))
-  // Long enough for a changed picture to settle and be read (one check to see the change, then SETTLE_MS of stillness).
-  const tick = () => vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS + SETTLE_MS)
-  return { cam, replies, shown, reads: () => fetchMock.mock.calls.length, tick, stop: loop.stop, reset: loop.reset, pending: loop.pendingRegion, fetchMock }
+  // Long enough for a changed picture to settle and be read (one check to see the change, then READ_SETTLE_MS of stillness: three checks).
+  const tick = () => vi.advanceTimersByTimeAsync(3 * BOARD_TICK_MS)
+  return { cam, replies, shown, reads: () => fetchMock.mock.calls.length, tick, stop: loop.stop, reset: loop.reset, lock: loop.lock, locked: loop.locked, reading: loop.reading, pending: loop.pendingRegion, fetchMock }
 }
 
 const fraction: Term[] = [
@@ -229,7 +229,7 @@ describe('board loop: 1 s checks (1.4)', () => {
     await h.tick()
     expect(h.reads()).toBe(1)
     h.cam.scene = 120
-    await vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS + SETTLE_MS) // seen on the next check, read once it has settled (1.9)
+    await vi.advanceTimersByTimeAsync(3 * BOARD_TICK_MS) // seen on the next check, read once it has settled (1.9)
     expect(h.reads()).toBe(2)
     h.stop()
   })
@@ -275,11 +275,11 @@ describe('board loop: wait for the picture to settle (1.9)', () => {
     h.stop()
   })
 
-  it('the first read of a still board starts one second in', async () => {
+  it('the first read of a still board starts three checks in', async () => {
     const h = harness()
-    await vi.advanceTimersByTimeAsync(BOARD_INTERVAL_MS)
+    await vi.advanceTimersByTimeAsync(2 * BOARD_TICK_MS)
     expect(h.reads()).toBe(0)
-    await vi.advanceTimersByTimeAsync(SETTLE_MS)
+    await vi.advanceTimersByTimeAsync(BOARD_TICK_MS)
     expect(h.reads()).toBe(1)
     h.stop()
   })
@@ -495,5 +495,102 @@ describe('board loop: small writing on a board that was already read', () => {
     await vi.advanceTimersByTimeAsync(IDLE_REREAD_MS + BOARD_INTERVAL_MS)
     expect(h.reads()).toBe(reads + 1)
     h.stop()
+  })
+})
+
+describe('board loop: faster checks', () => {
+  it('settles after READ_SETTLE_MS of stillness at the new tick', () => {
+    expect(BOARD_TICK_MS).toBe(500)
+    expect(isSettled(1, BOARD_TICK_MS, READ_SETTLE_MS)).toBe(false)
+    expect(isSettled(2, BOARD_TICK_MS, READ_SETTLE_MS)).toBe(true)
+  })
+  it('reads a changed picture within ~1.5 s', async () => {
+    const h = harness()
+    h.replies.push(fraction)
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(h.reads()).toBe(1)
+  })
+  it('scaleToMax keeps the long side at most 1024 and never enlarges', () => {
+    expect(scaleToMax(1920, 1080, 1024)).toEqual({ w: 1024, h: 576 })
+    expect(scaleToMax(1080, 1920, 1024)).toEqual({ w: 576, h: 1024 })
+    expect(scaleToMax(640, 360, 1024)).toEqual({ w: 640, h: 360 })
+  })
+  it('the photo sent is at most 1024 px on its long side', async () => {
+    const W = 2000, H = 1000
+    const sizes: { w: number; h: number }[] = []
+    const mk = () => {
+      const c = {
+        width: 0, height: 0,
+        getContext: () => ({ drawImage: () => {}, getImageData: () => ({ data: new Uint8ClampedArray(W * H * 4).fill(50) }) }),
+        toBlob: (cb: (b: Blob | null) => void) => { sizes.push({ w: c.width, h: c.height }); cb(new Blob(['j'])) },
+      }
+      return c
+    }
+    vi.stubGlobal('document', { createElement: mk })
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ terms: [] }) })))
+    vi.useFakeTimers()
+    const loop = startBoardLoop({ readyState: 4, videoWidth: W, videoHeight: H } as HTMLVideoElement, new TipBuffer(), () => {})
+    await vi.advanceTimersByTimeAsync(2000)
+    loop.stop()
+    expect(sizes.length).toBeGreaterThan(0)
+    expect(Math.max(sizes[0].w, sizes[0].h)).toBeLessThanOrEqual(1024)
+  })
+})
+
+describe('board loop: lock', () => {
+  it('a locked loop starts no read even when the frame changes; unlock resumes', async () => {
+    const h = harness()
+    h.lock(true)
+    expect(h.locked()).toBe(true)
+    h.replies.push(fraction)
+    await h.tick()
+    expect(h.reads()).toBe(0)
+    expect(h.pending()).toBeNull()
+    h.lock(false)
+    await h.tick()
+    expect(h.reads()).toBe(1)
+  })
+  it('reset unlocks', async () => {
+    const h = harness()
+    h.lock(true)
+    h.reset()
+    expect(h.locked()).toBe(false)
+    h.replies.push(fraction)
+    await h.tick()
+    expect(h.reads()).toBe(1)
+  })
+})
+
+describe('board loop: reading state', () => {
+  it('is true while a read is in flight and false after', async () => {
+    const h = harness()
+    let release!: () => void
+    h.fetchMock.mockImplementationOnce(() => new Promise(r => { release = () => r({ ok: true, json: async () => ({ terms: [] }) } as never) }))
+    expect(h.reading()).toBe(false)
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(h.reading()).toBe(true)
+    release()
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.reading()).toBe(false)
+  })
+})
+
+describe('board loop: lock during a read', () => {
+  it('a read in flight when locked is ignored, reading() is false, and a later read applies after unlock', async () => {
+    const h = harness()
+    let answer!: (v: unknown) => void
+    h.fetchMock.mockImplementationOnce(() => new Promise(r => { answer = r }) as never)
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(h.reading()).toBe(true)
+    h.lock(true)
+    expect(h.reading()).toBe(false)
+    answer({ ok: true, json: async () => ({ terms: fraction }) })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(h.shown).toEqual([])
+    expect(h.reading()).toBe(false)
+    h.lock(false)
+    h.replies.push(fraction)
+    await h.tick()
+    expect(h.shown.at(-1)).toEqual(fraction)
   })
 })
