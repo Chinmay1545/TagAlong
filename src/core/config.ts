@@ -1,0 +1,13 @@
+export const MAX_DIST = 0.06
+export const TIP_WINDOW_MS = 500
+export const TIP_BUFFER_MS = 3000
+export const BOARD_INTERVAL_MS = 3000
+export const HAND_RECENT_MS = 300
+export const EMPTY_READS_TO_CLEAR = 2 // one empty read may be a person in front of the board; two in a row means it was erased
+export const FRAME_DIFF_THRESHOLD = 8
+export const POINTER_WORDS = ['this', 'that', 'here', 'these', 'those'] as const
+export const WHISPER_GAP_MS = 150
+export const TTS_MAX_CHARS = 200
+export const PCM_RATE = 16000
+export const LATENCY_LOG_MAX = 20
+export const MAX_QUEUE_WAIT_MS = 300
