@@ -17,24 +17,27 @@ export function toTerm(t: any, id: number): Term | null {
   const latex = t.latex.trim()
   if (!latex) return null
   const box = { x, y, w, h }
-  const phrase = phraseGiven ? t.phrase.trim() : phraseFor(latex, box)
+  const phrase = phraseGiven ? t.phrase.trim() : phraseFor(latex, box, t.tag)
   if (!phrase) return null
   return { id, latex, phrase, box }
 }
 
 const NUM = /^\s*-?\d+(\.\d+)?\s*$/
 
-// Compact format, one term per line: latex|x|y|w|h with the box in thousandths (0-1000). The last four
-// fields are the box, so a "|" inside the LaTeX (absolute value) survives. 0-1 decimals are accepted too.
+// Compact format, one item per line: latex|tag|x|y|w|h (box in thousandths, 0-1000), or the older
+// latex|x|y|w|h. The last four fields are the box, so a "|" inside the LaTeX (absolute value) survives.
+// A word of 3+ letters right before the box is the tag (an unknown one means none); 0-1 decimals work too.
 export function lineTerm(line: string, id: number): Term | null {
   const f = line.trim().split('|')
   if (f.length < 5) return null
   const nums = f.slice(-4)
   if (!nums.every(n => NUM.test(n))) return null
+  const hasTag = f.length >= 6 && /^[a-z]{3,}$/i.test(f[f.length - 5].trim())
+  const tag = hasTag ? f[f.length - 5].trim().toLowerCase() : undefined
   const v = nums.map(Number)
   const scale = v.every(n => n <= 1) && nums.some(n => n.includes('.')) ? 1 : 1000
   const [x, y, w, h] = v.map(n => n / scale)
-  return toTerm({ latex: f.slice(0, -4).join('|'), box: { x, y, w, h } }, id)
+  return toTerm({ latex: f.slice(0, hasTag ? -5 : -4).join('|'), tag, box: { x, y, w, h } }, id)
 }
 
 function parseLines(text: string): Term[] {
