@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { bookmarkMsg, askMsg, markedMsg, assistMsg, noticeMsg } from '../src/live/broadcast'
+import { bookmarkMsg, askMsg, markedMsg, assistMsg, noticeMsg, unmarkMsg } from '../src/live/broadcast'
 
 describe('student <-> judge messages', () => {
   it('student asks: bookmark and what-is-happening', () => {
@@ -13,11 +13,10 @@ describe('student <-> judge messages', () => {
   })
 })
 
-import { unmarkMsg, markedMsg as markedMsg2 } from '../src/live/broadcast'
 describe('unmark messages', () => {
   it('unmarkMsg and markedMsg removed flag', () => {
     expect(unmarkMsg()).toEqual({ type: 'unmark' })
-    expect(markedMsg2(3)).toEqual({ type: 'marked', count: 3 })
-    expect(markedMsg2(2, true)).toEqual({ type: 'marked', count: 2, removed: true })
+    expect(markedMsg(3)).toEqual({ type: 'marked', count: 3 })
+    expect(markedMsg(2, true)).toEqual({ type: 'marked', count: 2, removed: true })
   })
 })

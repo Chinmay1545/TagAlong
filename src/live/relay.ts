@@ -56,13 +56,14 @@ export function createRelay(o: Opts) {
       attempt = 0
       set('open')
       armDead()
-      ping = setInterval(() => sock.send(JSON.stringify({ type: 'ping', t: now() })), PING_MS)
+      ping = setInterval(() => { try { sock.send(JSON.stringify({ type: 'ping', t: now() })) } catch { /* closing; the close handler reconnects */ } }, PING_MS)
     }
     sock.onmessage = e => {
       armDead()
       let m: any
       try { m = JSON.parse(String(e.data)) } catch { return }
-      if (m && m.type === 'pong') o.onRtt?.(now() - m.t)
+      if (!m || typeof m !== 'object') return
+      if (m.type === 'pong') { if (typeof m.t === 'number') o.onRtt?.(now() - m.t) }
       else o.onMessage(m)
     }
     sock.onclose = () => { if (ws === sock) lost() }
@@ -80,8 +81,7 @@ export function createRelay(o: Opts) {
   return {
     send(m: object): boolean {
       if (status !== 'open' || !ws) return false
-      ws.send(JSON.stringify(m))
-      return true
+      try { ws.send(JSON.stringify(m)); return true } catch { return false }
     },
     close() {
       done = true

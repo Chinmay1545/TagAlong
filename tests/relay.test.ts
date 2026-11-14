@@ -123,6 +123,27 @@ describe('relay', () => {
     relay.close()
   })
 
+  it('sends never throw', () => {
+    const { relay } = make()
+    last().open()
+    last().send = () => { throw new Error('closing') }
+    expect(relay.send({ a: 1 })).toBe(false)
+    expect(() => vi.advanceTimersByTime(10000)).not.toThrow()
+    relay.close()
+  })
+
+  it('ignores malformed pongs and non-object messages', () => {
+    const { relay, msgs, rtts } = make()
+    last().open()
+    last().message({ type: 'pong' })
+    last().message({ type: 'pong', t: 'x' })
+    last().message(null)
+    last().message(5)
+    expect(rtts).toEqual([])
+    expect(msgs).toEqual([])
+    relay.close()
+  })
+
   it('close stops reconnecting', () => {
     const { relay } = make()
     last().open()
