@@ -51,8 +51,14 @@ const MAX_QUEUE_BYTES = 160000 // ~5 s (tolerates a slow Transcribe start-up) of
 export { originAllowed }
 
 export function attachTranscribe(server: http.Server, makeStream: (audio: AsyncIterable<Uint8Array>) => AsyncIterable<unknown> = transcribeStream, access: Access = LOCAL_ACCESS): void {
-  const wss = new WebSocketServer({ server, path: '/ws/transcribe', maxPayload: 64 * 1024, verifyClient: ({ origin, req }: { origin: string; req: { headers: { host?: string; cookie?: string } } }) =>
+  // noServer + our own path check: a WebSocketServer bound to the http server rejects every OTHER path
+  // with 400, which would break /ws/room (server/rooms.ts) on the same server.
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024, verifyClient: ({ origin, req }: { origin: string; req: { headers: { host?: string; cookie?: string } } }) =>
     originAllowed(origin, access) && hostAllowed(access, req.headers.host) && keyAllowed(access, req.headers.cookie) })
+  server.on('upgrade', (req, socket, head) => {
+    if (new URL(req.url ?? '/', 'http://x').pathname !== '/ws/transcribe') return
+    wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req))
+  })
   wss.on('connection', (ws) => {
     let queue: Uint8Array[] = []
     let queued = 0

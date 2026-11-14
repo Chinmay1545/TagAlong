@@ -7,7 +7,9 @@ export type Synth = (text: string) => Promise<Buffer>
 
 const CACHE_MAX = 200
 
-export function ttsRouter(synth: Synth): express.Router {
+// guard: an extra check on the text (the classroom relay lets a student voice only phrases published in their
+// room); false -> 403. Without a guard every caller that got past the access check may voice any text.
+export function ttsRouter(synth: Synth, guard?: (res: express.Response, text: string) => boolean): express.Router {
   const router = express.Router()
   const cache = new Map<string, { audio: Buffer; voice?: string }>() // ponytail: FIFO-capped in-memory; swap for LRU if hit rate matters
   router.post('/api/tts', express.json({ limit: '4kb' }), async (req, res) => {
@@ -15,6 +17,10 @@ export function ttsRouter(synth: Synth): express.Router {
     const text = typeof raw === 'string' ? raw.trim() : ''
     if (!text || text.length > TTS_MAX_CHARS) {
       res.status(400).json({ error: `text must be a non-empty string of at most ${TTS_MAX_CHARS} characters` })
+      return
+    }
+    if (guard && !guard(res, text)) {
+      res.status(403).json({ error: 'not a phrase from this class' })
       return
     }
     try {
