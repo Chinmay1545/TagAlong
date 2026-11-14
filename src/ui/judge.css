@@ -215,15 +215,22 @@ kbd { font-family: var(--mono); font-size: 11px; line-height: 1; color: var(--te
 .tr-mark { display: block; margin-bottom: 4px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
 
 /* ---------- room panel: phones join by QR ---------- */
-.room-panel { grid-column: 1 / -1; justify-self: start; max-width: 100%; display: flex; align-items: center; gap: 16px; padding: 12px 18px 12px 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04); animation: rise 0.5s var(--spring) both; }
-/* White quiet zone around the code: scanners need the contrast. */
-.room-qr { width: 120px; height: 120px; flex: none; background: #fff; padding: 8px; border-radius: 10px; }
+.room-panel {
+  grid-column: 1 / -1; justify-self: start; max-width: 100%; display: flex; align-items: center; gap: 20px; padding: 12px 24px 12px 12px;
+  border: 1px solid var(--line); border-radius: 18px; background: var(--panel);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 0 0 1px rgba(255, 255, 255, 0.02), 0 20px 40px -24px rgba(9, 9, 11, 0.9);
+  animation: rise 0.5s var(--spring) both;
+}
+/* The QR sits in a white tile with a thin glass rim, like a card set into the panel. */
+.room-qr { width: 120px; height: 120px; flex: none; background: #fafafa; padding: 8px; border-radius: 12px; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 0 0 5px var(--raise), inset 0 1px 0 rgba(255, 255, 255, 0.9); }
 .room-qr svg { display: block; width: 100%; height: 100%; }
-.room-info { display: grid; gap: 6px; min-width: 0; }
+.room-info { display: grid; gap: 8px; min-width: 0; }
 .room-name { font-weight: 600; font-size: 15px; letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.room-count { position: relative; display: flex; align-items: center; gap: 10px; font-size: 24px; font-weight: 500; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.room-count { position: relative; display: flex; align-items: center; gap: 12px; font-size: 28px; font-weight: 500; line-height: 1; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; white-space: nowrap; animation: room-roll 0.5s var(--spring) both; }
 .room-count::before { content: ''; width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--accent); }
-/* A ring bursts off the dot each time a phone joins. */
-.room-count.pulse::after { content: ''; position: absolute; left: -4px; top: 50%; width: 16px; height: 16px; margin-top: -8px; border-radius: 50%; border: 2px solid var(--accent); opacity: 0; animation: room-burst 0.7s var(--spring); }
-.room-status { color: var(--muted); font-size: 12px; }
-@keyframes room-burst { from { transform: scale(1); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
+.room-count.pulse::after { content: ''; position: absolute; left: -4px; top: 50%; width: 16px; height: 16px; margin-top: -8px; border-radius: 50%; border: 2px solid var(--accent); opacity: 0; animation: room-burst 0.8s var(--spring); }
+.room-status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.room-status::before { content: ''; width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--dim); opacity: 0.5; }
+.room-status.on::before { background: var(--accent); opacity: 1; animation: pulse 2.4s ease-in-out infinite; }
+@keyframes room-roll { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes room-burst { from { transform: scale(1); opacity: 1; } to { transform: scale(2.2); opacity: 0; } }

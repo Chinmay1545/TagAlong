@@ -3,13 +3,16 @@
   --bg: #09090b;
   --panel: #111113;
   --raise: #18181b;
+  --press: #202024;
   --line: #27272a;
   --line-2: #3f3f46;
+  --line-3: #71717a;
   --text: #f4f4f5;
   --muted: #a1a1aa;
   --dim: #8e8e96;
   --accent: #3fb98a;
   --accent-soft: rgba(63, 185, 138, 0.1);
+  --accent-press: rgba(63, 185, 138, 0.18);
   --accent-edge: rgba(63, 185, 138, 0.45);
   --spring: cubic-bezier(0.16, 1, 0.3, 1);
   --mono: 'Geist Mono', ui-monospace, monospace;
@@ -21,75 +24,118 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
+html, body { overflow-x: hidden; }
 body { margin: 0; background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 .phone { min-height: 100dvh; width: 100%; max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; padding: var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l); position: relative; }
+/* Film grain like the laptop: one fixed layer, never on anything that scrolls. */
+.phone::after {
+  content: ''; position: fixed; inset: 0; z-index: 2; pointer-events: none; opacity: 0.04; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
 
 /* Flex children may shrink below their content; long words wrap instead of widening the page. */
 .phone > *, .p-stage > *, .p-choose > * { min-width: 0; }
 
 /* ---------- buttons ---------- */
 .p-btn {
-  min-height: 64px; width: 100%; padding: 14px 18px; font: inherit; font-size: 17px; font-weight: 500; line-height: 1.25; text-align: left;
+  min-height: 64px; width: 100%; padding: 16px 20px; font: inherit; font-size: 17px; font-weight: 500; line-height: 1.25; text-align: left;
   color: var(--text); background: var(--raise); border: 1px solid var(--line-2); border-radius: 18px; cursor: pointer;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  transition: transform 0.3s var(--spring), border-color 0.3s var(--spring), background-color 0.3s var(--spring);
-  touch-action: manipulation;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  position: relative; overflow: hidden; touch-action: manipulation; user-select: none; -webkit-user-select: none;
+  transition: transform 0.35s var(--spring), border-color 0.3s var(--spring), background-color 0.3s var(--spring), color 0.3s var(--spring);
 }
-.p-btn:hover { border-color: var(--accent-edge); }
-.p-btn:active { transform: scale(0.98); }
+/* Press: a quick physical step down, fast in and springy out. */
+.p-btn:active { transform: scale(0.98); background-color: var(--press); transition-duration: 0.12s; }
+@media (hover: hover) {
+  .p-btn:hover { border-color: var(--line-3); }
+}
 
 /* ---------- start: the whole screen is the button ---------- */
 .p-start {
-  flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-start; gap: 14px;
+  flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-start; gap: 16px;
   margin: calc(-1 * var(--safe-t)) calc(-1 * var(--safe-r)) calc(-1 * var(--safe-b)) calc(-1 * var(--safe-l));
-  padding: var(--safe-t) var(--safe-r) calc(var(--safe-b) + 12vh) calc(var(--safe-l) + 8px);
-  border: 0; border-radius: 0; background: var(--bg); box-shadow: none; position: relative; overflow: hidden;
+  padding: var(--safe-t) var(--safe-r) calc(var(--safe-b) + 11vh) calc(var(--safe-l) + 8px);
+  border: 0; border-radius: 0; background: var(--bg); box-shadow: none;
 }
-.p-start:hover { border-color: transparent; }
+.p-start:active { transform: none; background-color: var(--bg); }
+.p-start:active .p-go { transform: scale(0.98); transition-duration: 0.12s; }
+@media (hover: hover) { .p-start:hover { border-color: transparent; } }
 .p-start:focus-visible { outline-offset: -6px; }
-.p-class { order: -1; font-family: var(--mono); font-size: 13px; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
-.p-go { font-size: clamp(44px, 13vw, 88px); font-weight: 600; letter-spacing: -0.04em; line-height: 0.95; max-width: 8ch; text-wrap: balance; }
-/* A small accent dot with a slow breathing ring behind it, up in the empty top of the screen. */
-/* Centre sits so the outer ring's left edge lines up with the text. */
-.p-orb { position: absolute; top: calc(var(--safe-t) + 20vh); left: calc(var(--safe-l) + 89px); width: 14px; height: 14px; border-radius: 50%; background: var(--accent); }
-.p-orb::before, .p-orb::after { content: ''; position: absolute; inset: -40px; border-radius: 50%; border: 1px solid var(--accent-edge); animation: breathe 3.2s ease-in-out infinite; }
-.p-orb::after { inset: -88px; border-color: var(--accent-soft); background: var(--accent-soft); animation-delay: -1.6s; }
+.p-class { order: -1; font-family: var(--mono); font-size: 13px; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); animation: rise 0.7s var(--spring) both; }
+.p-go { font-size: clamp(42px, 12vw, 76px); font-weight: 600; letter-spacing: -0.045em; line-height: 0.95; max-width: 8ch; text-wrap: balance; transform-origin: left bottom; transition: transform 0.35s var(--spring); animation: rise 0.8s var(--spring) 90ms both; }
+.p-hint { font-size: 16px; line-height: 1.5; color: var(--muted); max-width: 30ch; text-wrap: balance; animation: rise 0.8s var(--spring) 180ms both; }
+/* The beacon: an accent dot, a breathing ring, and a wider, slower ring out of step for depth. */
+.p-orb { position: absolute; top: calc(var(--safe-t) + 22vh); left: calc(var(--safe-l) + 100px); width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 6px var(--accent-soft); animation: fade 1.2s var(--spring) both; }
+.p-orb::before, .p-orb::after { content: ''; position: absolute; left: 50%; top: 50%; border-radius: 50%; }
+.p-orb::before { width: 96px; height: 96px; margin: -48px 0 0 -48px; border: 1px solid var(--accent-edge); animation: breathe 3.2s ease-in-out infinite; }
+.p-orb::after { width: 184px; height: 184px; margin: -92px 0 0 -92px; border: 1px solid var(--accent-edge); background: radial-gradient(circle, var(--accent-soft), transparent 70%); animation: drift 6.4s ease-in-out -2.1s infinite; }
 
 /* ---------- first visit: two stacked choices ---------- */
-.p-choose { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 14px; padding-bottom: 8vh; }
-.p-choose::before { content: 'How should whispers reach you?'; font-size: clamp(30px, 8.5vw, 48px); font-weight: 600; letter-spacing: -0.03em; line-height: 1.05; max-width: 12ch; margin-bottom: 18px; text-wrap: balance; }
-.p-choice { display: grid; grid-template-columns: minmax(0, 1fr); animation: rise 0.6s var(--spring) both; }
-.p-choice + .p-choice { animation-delay: 80ms; }
+.p-choose { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 16px; padding-bottom: 8vh; }
+.p-choose::before { content: 'How should whispers reach you?'; font-size: clamp(30px, 8.5vw, 46px); font-weight: 600; letter-spacing: -0.035em; line-height: 1.05; max-width: 12ch; margin-bottom: 16px; text-wrap: balance; animation: rise 0.7s var(--spring) both; }
+.p-choice { display: grid; grid-template-columns: minmax(0, 1fr); animation: rise 0.7s var(--spring) 90ms both; }
+.p-choice + .p-choice { animation-delay: 170ms; }
 .p-choice > * { grid-area: 1 / 1; }
-.p-choice .p-btn { min-height: 112px; padding: 22px 22px 48px; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
-.p-desc { align-self: end; padding: 0 22px 20px; font-size: 14px; color: var(--muted); pointer-events: none; }
+.p-choice .p-btn { min-height: 112px; padding: 22px 22px 48px; font-size: 20px; font-weight: 600; letter-spacing: -0.015em; }
+.p-desc { position: relative; align-self: end; padding: 0 22px 20px; font-size: 14px; color: var(--muted); pointer-events: none; }
+/* An accent edge grows along the left of the choice while it is pressed or focused. */
+.p-choice .p-btn::before { content: ''; position: absolute; left: 0; top: 18px; bottom: 18px; width: 3px; border-radius: 0 2px 2px 0; background: var(--accent); transform: scaleY(0); transition: transform 0.35s var(--spring); }
+.p-choice .p-btn:active::before, .p-choice .p-btn:focus-visible::before { transform: scaleY(1); }
 
-/* ---------- live ---------- */
+/* ---------- live: top bar ---------- */
 .p-chip {
   align-self: flex-start; display: inline-flex; align-items: center; gap: 10px; max-width: calc(100% - 120px);
   padding: 8px 14px 8px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel);
-  font-family: var(--mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  font-family: var(--mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: fade 0.6s var(--spring) both;
 }
+.p-chip.off { color: var(--muted); }
 .p-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--accent); animation: pulse 2.4s ease-in-out infinite; }
-.p-chip.off .p-dot { background: var(--dim); animation: none; }
-.p-rtt { position: absolute; top: calc(var(--safe-t) + 9px); right: var(--safe-r); margin: 0; font-family: var(--mono); font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
-
-.p-stage { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 16px; padding: 28px 0 24px; min-height: 0; }
-.p-banner { padding: 12px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--muted); font-size: 15px; animation: rise 0.4s var(--spring) both; }
-.p-join { animation: rise 0.5s var(--spring) both; }
-
-/* The current whisper: huge, and a thin accent bar above it that flashes when it changes (the element is keyed, so both restart). */
-.p-big {
-  margin: 0; font-size: clamp(44px, 12vw, 96px); font-weight: 600; letter-spacing: -0.035em; line-height: 1.02;
-  text-wrap: balance; overflow-wrap: anywhere; animation: rise 0.7s var(--spring) both;
+.p-chip.off .p-dot { background: var(--dim); opacity: 0.6; animation: none; }
+.p-rtt {
+  position: absolute; top: calc(var(--safe-t) + 9px); right: var(--safe-r); margin: 0; padding: 0 2px;
+  font-family: var(--mono); font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums;
 }
-.p-big::before { content: ''; display: block; width: 56px; height: 3px; margin-bottom: 22px; border-radius: 2px; background: var(--accent); transform-origin: left; animation: speak 2s var(--spring) both; }
-/* Nothing said yet: a quiet placeholder so the screen never looks dead (aria-hidden element, the live region speaks the real state). */
-.p-big:empty { font-size: clamp(28px, 8vw, 40px); color: var(--muted); animation: none; }
+/* A small accent dot that lights up with each new whisper, then settles. */
+.p-rtt::before { content: ''; display: inline-block; width: 6px; height: 6px; margin: 0 8px 1px 0; border-radius: 50%; background: var(--accent); vertical-align: middle; animation: blip 1.6s var(--spring) both; }
+.p-rtt:empty { display: none; }
+.p-chip.off ~ .p-rtt { opacity: 0.4; }
+
+/* ---------- live: stage ---------- */
+.p-stage { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 16px; padding: 32px 0 24px; min-height: 0; position: relative; }
+
+/* Before the phone is in a class, the start beacon stays on screen so the wait reads as calm, not broken. */
+.p-stage[data-phase='connecting']::before, .p-stage[data-phase='trying']::before, .p-stage[data-phase='wait']::before,
+.p-stage[data-phase='connecting']::after, .p-stage[data-phase='trying']::after, .p-stage[data-phase='wait']::after {
+  content: ''; position: absolute; top: 24%; left: 48px; border-radius: 50%; pointer-events: none;
+}
+.p-stage[data-phase]::before { width: 12px; height: 12px; margin: -6px 0 0 -6px; background: var(--accent); box-shadow: 0 0 0 6px var(--accent-soft); }
+.p-stage[data-phase]::after { width: 96px; height: 96px; margin: -48px 0 0 -48px; border: 1px solid var(--accent-edge); animation: breathe 3.2s ease-in-out infinite; }
+.p-stage[data-phase='connecting']::after { animation: ripple 1.8s var(--spring) infinite; }
+.p-stage[data-phase='trying']::before { background: var(--dim); box-shadow: 0 0 0 6px rgba(142, 142, 150, 0.12); }
+.p-stage[data-phase='trying']::after { border-color: var(--line-2); animation: ripple 3.2s var(--spring) infinite; }
+
+.p-banner {
+  position: relative; overflow: hidden; display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px; border: 1px solid var(--line-2); border-radius: 16px; background: var(--panel); color: var(--text); font-size: 15px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04); animation: rise 0.5s var(--spring) both;
+}
+.p-banner::before { content: ''; width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--dim); animation: pulse 1.2s ease-in-out infinite; }
+/* A slow light passing through the banner while the phone looks for the class again. */
+.p-banner::after { content: ''; position: absolute; inset: 0; width: 60%; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent); transform: translateX(-100%); animation: shimmer 2.4s ease-in-out infinite; }
+
+.p-join { min-height: 72px; font-size: 19px; font-weight: 600; animation: rise 0.6s var(--spring) both; animation-delay: calc(var(--i, 0) * 70ms + 60ms); }
+
+/* The current whisper: huge, each word rising in turn, with an accent bar that sweeps in from the left (the element is keyed, so all of it restarts). */
+.p-big { margin: 0; font-size: clamp(42px, 11.5vw, 92px); font-weight: 600; letter-spacing: -0.04em; line-height: 1.02; text-wrap: balance; overflow-wrap: anywhere; }
+.p-big::before { content: ''; display: block; width: 56px; height: 3px; margin-bottom: 24px; border-radius: 2px; background: var(--accent); transform-origin: left; animation: sweep 2.2s var(--spring) both; }
+.p-w { display: inline-block; max-width: 100%; animation: word 0.7s var(--spring) both; animation-delay: calc(var(--i, 0) * 40ms + 60ms); }
+/* Nothing said yet: a quiet placeholder, gently breathing, so the screen never looks dead (aria-hidden; the live region speaks the real state). */
+.p-big:empty { font-size: clamp(28px, 8vw, 40px); letter-spacing: -0.03em; color: var(--muted); animation: idle 4.8s ease-in-out infinite; }
 .p-big:empty::before { display: none; }
 /* One rule per phase (data-phase on the stage), so no selector can outrank another. */
 .p-big:empty::after { content: 'Listening.'; }
@@ -98,19 +144,49 @@ body { margin: 0; background: var(--bg); color: var(--text); -webkit-font-smooth
 [data-phase='wait'] .p-big:empty::after { content: 'Waiting for class to start.'; }
 [data-phase='choose'] .p-big:empty::after { content: 'Choose a class.'; }
 [data-phase='dropped'] .p-big:empty::after { content: none; }
-[data-phase='choose'] .p-big:empty { order: -1; }
-.p-meant { margin: 0; font-size: 17px; line-height: 1.5; color: var(--muted); max-width: 40ch; }
+[data-phase='choose'] .p-big:empty { order: -1; margin-bottom: 8px; }
+.p-meant { margin: 0; font-size: 17px; line-height: 1.5; color: var(--muted); max-width: 40ch; animation: rise 0.6s var(--spring) 200ms both; }
 
-.p-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+/* ---------- live: controls ---------- */
+.p-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.p-controls > .p-btn:not(.p-stop) { animation: rise 0.55s var(--spring) both; }
+.p-controls > .p-mark { animation-delay: 50ms; }
+.p-controls > .p-ask { animation-delay: 100ms; }
 .p-repeat { grid-column: 1 / -1; min-height: 72px; font-size: 19px; font-weight: 600; border-color: var(--accent-edge); background: var(--accent-soft); }
-.p-stop { grid-column: 1 / -1; min-height: 56px; font-size: 15px; color: var(--muted); background: transparent; border-color: var(--line); }
-.p-stop.armed { color: var(--text); border-color: var(--muted); }
+.p-repeat:active { background-color: var(--accent-press); }
+@media (hover: hover) { .p-repeat:hover { border-color: var(--accent); } }
+/* Undo window: accent edge and a bar that empties over the 5 s it lasts (restarts each time the class is added). */
+.p-mark.undo { color: var(--accent); border-color: var(--accent-edge); background: var(--accent-soft); }
+.p-mark.undo::after { content: ''; position: absolute; left: 16px; right: 16px; bottom: 9px; height: 2px; border-radius: 1px; background: var(--accent); transform-origin: left; animation: drain 5s linear both; }
+.p-stop { grid-column: 1 / -1; font-size: 15px; color: var(--muted); background: transparent; border-color: var(--line); box-shadow: none; }
+.p-stop:active { background-color: var(--raise); }
+.p-stop.armed { color: var(--text); border-color: var(--line-3); background: var(--raise); animation: arm 0.4s var(--spring); }
+
+/* Short screens (phone on its side): smaller type so the whisper and the controls both fit. */
+@media (max-height: 500px) {
+  .p-big { font-size: clamp(32px, 7vh, 48px); }
+  .p-stage { padding: 16px 0 12px; }
+  .p-go { font-size: 44px; }
+  .p-start { padding-bottom: calc(var(--safe-b) + 6vh); }
+  .p-orb { top: calc(var(--safe-t) + 14vh); }
+  .p-orb::after { display: none; }
+  .p-stage[data-phase]::before, .p-stage[data-phase]::after { display: none; }
+}
 
 /* ---------- motion ---------- */
 @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes word { from { opacity: 0; transform: translateY(0.32em); } to { opacity: 1; transform: none; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(0.7); opacity: 0.45; } }
 @keyframes breathe { 0%, 100% { transform: scale(0.82); opacity: 0.35; } 50% { transform: scale(1); opacity: 1; } }
-@keyframes speak { 0% { transform: scaleX(0.2); opacity: 0.4; } 20% { transform: scaleX(1.6); opacity: 1; } 100% { transform: scaleX(1); opacity: 0.55; } }
+@keyframes drift { 0%, 100% { transform: scale(0.9); opacity: 0.08; } 50% { transform: scale(1.04); opacity: 0.22; } }
+@keyframes ripple { from { transform: scale(0.3); opacity: 0.9; } to { transform: scale(1.1); opacity: 0; } }
+@keyframes idle { 0%, 100% { opacity: 0.55; } 50% { opacity: 0.8; } }
+@keyframes sweep { 0% { transform: scaleX(0); opacity: 1; } 27% { transform: scaleX(1); opacity: 1; } 60% { opacity: 1; } 100% { transform: scaleX(1); opacity: 0.4; } }
+@keyframes blip { from { opacity: 1; transform: scale(1.6); } to { opacity: 0.35; transform: none; } }
+@keyframes shimmer { to { transform: translateX(260%); } }
+@keyframes drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@keyframes arm { 0% { transform: scale(0.98); } 100% { transform: none; } }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }

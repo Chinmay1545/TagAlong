@@ -26,7 +26,7 @@ type Phase = 'idle' | 'wait' | 'choose' | 'joined'
 
 // Each word in its own span so a new whisper can rise word by word; the text content stays exactly the same.
 const words = (text: string) =>
-  text.split(' ').map((w, i) => <span key={i} className="p-w" style={{ '--i': i } as React.CSSProperties}>{i ? ' ' : ''}{w}</span>)
+  !text ? null : text.split(' ').flatMap((w, i) => [i ? ' ' : null, <span key={i} className="p-w" style={{ '--i': i } as React.CSSProperties}>{w}</span>])
 
 const marked = (n: number, removed?: boolean) =>
   `${removed ? 'Mark removed' : 'Marked'}. ${n} moment${n === 1 ? '' : 's'} to go over later.`
@@ -258,6 +258,7 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
         <button type="button" className="p-btn p-start" onClick={() => start(mode)}>
           <span className="p-orb" aria-hidden="true" />
           <span className="p-go">Start listening</span>{' '}<span className="sr">to</span>{' '}<span className="p-class">{name}</span>
+          <span className="p-hint" aria-hidden="true">Each whisper arrives here as it is said.</span>
         </button>
       ) : (
         <div className="p-choose">
@@ -292,7 +293,7 @@ export function PhoneApp({ token, name, deps = {} }: { token: string; name: stri
             )}
             <button type="button" className={`p-btn p-stop${armed ? ' armed' : ''}`} onClick={stop}>{armed ? 'Press again to stop' : 'Stop listening'}</button>
           </div>
-          <p className="p-rtt">{rtt === null ? '' : `relay ${rtt} ms`}</p>
+          <p key={big} className="p-rtt">{rtt === null ? '' : `relay ${rtt} ms`}</p>
         </>
       )}
     </main>
