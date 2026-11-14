@@ -1,5 +1,5 @@
-import { resolvePointer, steadiestTip, termAt } from '../core/resolver'
-import { HOLD_MAX_MS, MAX_DIST, TIP_WINDOW_MS } from '../core/config'
+import { readPointer, termAt, type When } from '../core/resolver'
+import { HOLD_MAX_MS, LATE_WINDOW_MS, MAX_DIST, RECHECK_MS, TIP_WINDOW_MS, WEB_SPEECH_LAG_MS } from '../core/config'
 import type { TipBuffer } from '../core/tipBuffer'
 import type { Box, Resolution, Term, WordEvent } from '../core/types'
 import type { createWhisperPlayer } from '../audio/whisper'
@@ -7,7 +7,8 @@ import { isBoardQuery, readingOrder } from './boardQuery'
 import { detectPointerWords, type WordItem } from '../speech/words'
 
 export type Live = {
-  handleItems(items: WordItem[], audioStartPerf: number | null): void
+  // late: the words were said a moment before they arrived and carry no timing (browser speech).
+  handleItems(items: WordItem[], audioStartPerf: number | null, late?: boolean): void
   handleFinal(text: string, t0: number, t1: number): void
   onResolution(cb: (r: Resolution, latencyMs: number | null) => void): () => void
   onBoardQuery(cb: (r: Resolution, latencyMs: number | null) => void): () => void
@@ -30,9 +31,10 @@ type Deps = {
   player: Pick<ReturnType<typeof createWhisperPlayer>, 'play' | 'setEnabled'>
   now?: () => number // performance.now clock, used to time held words
   getPendingRegion?: () => Box | null // board area changed but not read yet (boardLoop.pendingRegion)
+  later?: (fn: () => void, ms: number) => void // runs fn after ms (a timer; tests pass their own)
 }
 
-export function createLive({ getTerms, tips, player, now = () => performance.now(), getPendingRegion = () => null }: Deps): Live {
+export function createLive({ getTerms, tips, player, now = () => performance.now(), getPendingRegion = () => null, later = (fn, ms) => { setTimeout(fn, ms) } }: Deps): Live {
   const seen = new Set<string>()
   const resCbs = new Set<(r: Resolution, l: number | null) => void>()
   const boardCbs = new Set<(r: Resolution, l: number | null) => void>()
@@ -44,18 +46,32 @@ export function createLive({ getTerms, tips, player, now = () => performance.now
     const latency = played ? played.startedAt - r.word.t : null
     resCbs.forEach(cb => cb(r, latency))
   }
+  // One pointer word. when: the moment to look at. recheck: allowed to wait and look once more.
+  const resolve = (word: WordEvent, when: When, recheck: boolean) => {
+    // The gate runs first: a word said with nothing resting on the board ('not-pointing') is silent
+    // and is never held, so it cannot be whispered late when a box shows up.
+    const { resolution, aim, miss } = readPointer(word, getTerms(), tips, when)
+    if (miss === 'not-pointing' && recheck && SINGLE.has(word.word) && now() < when.at + when.windowMs) {
+      // Nothing is resting yet, but the time around the word is not over: the finger may just be landing.
+      // Look once more shortly. (A word whose moment has fully passed is not rechecked.)
+      later(() => resolve(word, when, false), RECHECK_MS)
+      return
+    }
+    if (miss === 'empty-space' && aim && SINGLE.has(word.word)) {
+      // The pointer rests on a spot with no box. If that spot is ink the board read has not drawn yet,
+      // hold the word instead of going silent; checkHeld whispers it when the box arrives.
+      const region = getPendingRegion()
+      if (region && near(aim, region)) { held.push({ word, tip: aim, at: now() }); return }
+    }
+    emit(resolution)
+  }
   return {
-    handleItems(items, audioStartPerf) {
+    handleItems(items, audioStartPerf, late = false) {
       for (const word of detectPointerWords(items, seen, audioStartPerf)) {
-        const r = resolvePointer(word, getTerms(), tips)
-        if (!r.terms.length && SINGLE.has(word.word)) {
-          // No box under the pointer yet. If it points at ink the board read has not drawn yet, hold the
-          // word instead of going silent; checkHeld whispers it when the box arrives.
-          const tip = steadiestTip(tips.window(word.t - TIP_WINDOW_MS, word.t + TIP_WINDOW_MS), word.t)
-          const region = getPendingRegion()
-          if (tip && region && near(tip, region)) { held.push({ word, tip, at: now() }); continue }
-        }
-        emit(r)
+        // A late word (browser speech) was said some time before it arrived, and the finger may have left
+        // since. Look around the moment it was probably said, and further back, instead of around now.
+        const when: When = late ? { at: word.t - WEB_SPEECH_LAG_MS, windowMs: LATE_WINDOW_MS } : { at: word.t, windowMs: TIP_WINDOW_MS }
+        resolve(word, when, true)
       }
     },
     checkHeld() {

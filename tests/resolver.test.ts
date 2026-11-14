@@ -30,6 +30,38 @@ describe('boxDistance / termAt', () => {
   })
 })
 
+// Bracket bug (2.2): "(2x+y)" is read as a group box with its inner terms boxed too.
+describe('termAt: pointer inside more than one box', () => {
+  const GROUP: Term = { id: 1, latex: '(2x+y)', phrase: 'the group', box: { x: 0.2, y: 0.2, w: 0.3, h: 0.1 } }
+  const TWO_X: Term = { id: 2, latex: '2x', phrase: 'the 2x', box: { x: 0.22, y: 0.22, w: 0.08, h: 0.06 } }
+  const Y: Term = { id: 3, latex: 'y', phrase: 'the y', box: { x: 0.4, y: 0.22, w: 0.06, h: 0.06 } }
+  it('on y inside (2x+y): picks y, not the group', () => {
+    expect(termAt([GROUP, TWO_X, Y], 0.43, 0.25)?.latex).toBe('y')
+    expect(termAt([Y, TWO_X, GROUP], 0.43, 0.25)?.latex).toBe('y') // array order does not matter
+  })
+  it('the group has the older (lower) id and still loses to the smaller box', () => {
+    const lateInner: Term = { ...Y, id: 9 }
+    expect(termAt([GROUP, lateInner], 0.43, 0.25)?.id).toBe(9)
+  })
+  it('inside the group but on no inner term (the plus sign): the group', () => {
+    expect(termAt([GROUP, TWO_X, Y], 0.35, 0.25)?.latex).toBe('(2x+y)')
+  })
+  it('three boxes nested: the innermost wins', () => {
+    const WHOLE: Term = { id: 0, latex: '3(2x+y)', phrase: 'the whole thing', box: { x: 0.1, y: 0.15, w: 0.45, h: 0.2 } }
+    expect(termAt([WHOLE, GROUP, Y], 0.43, 0.25)?.latex).toBe('y')
+  })
+  it('same-size boxes that both contain the pointer: lowest id wins', () => {
+    const twin: Term = { ...Y, id: 2, latex: 'twin' }
+    expect(termAt([Y, twin], 0.43, 0.25)?.id).toBe(2)
+  })
+  it('resolvePointer uses the same rule', () => {
+    const buf = new TipBuffer()
+    for (let t = 300; t <= 700; t += 50) buf.push({ t, x: 0.43, y: 0.25 })
+    const r = resolvePointer({ word: 'this', t: 500, isPointer: true }, [GROUP, TWO_X, Y], buf)
+    expect(r.terms.map(t => t.latex)).toEqual(['y'])
+  })
+})
+
 describe('steadiestTip', () => {
   const track: TipSample[] = Array.from({ length: 11 }, (_, i) => {
     const t = i * 100
@@ -81,6 +113,37 @@ describe('resolvePointer', () => {
   it('"Those." (with punctuation) takes the path branch', () => {
     const slide: TipSample[] = Array.from({ length: 11 }, (_, i) => ({ t: i * 100, x: 0.25 + 0.04 * i, y: 0.25 }))
     const r = resolvePointer({ word: 'Those.', t: 500, isPointer: true }, [A, B], fill(slide))
+    expect(r.terms.map(t => t.id)).toEqual([1, 2])
+  })
+})
+
+describe('resolvePointer with more than one kind of pointer (2.1)', () => {
+  const at = (kind: 'finger' | 'stick' | 'laser', x: number, y: number) =>
+    Array.from({ length: 9 }, (_, i) => ({ kind, x, y, confidence: 1, t: 300 + i * 50 }))
+  const fill = (...tracks: { t: number; x: number; y: number }[][]) => {
+    const buf = new TipBuffer()
+    tracks.flat().sort((a, b) => a.t - b.t).forEach(s => buf.push(s))
+    return buf
+  }
+  const word = { word: 'this', t: 500, isPointer: true }
+  it('a laser on B wins over the hand that holds it, resting near A', () => {
+    expect(resolvePointer(word, [A, B], fill(at('finger', 0.25, 0.25), at('laser', 0.65, 0.25))).terms).toEqual([B])
+  })
+  it('a stick tip on B wins over the hand near A', () => {
+    expect(resolvePointer(word, [A, B], fill(at('finger', 0.25, 0.25), at('stick', 0.65, 0.25))).terms).toEqual([B])
+  })
+  it('a laser wins over a stick', () => {
+    expect(resolvePointer(word, [A, B], fill(at('stick', 0.25, 0.25), at('laser', 0.65, 0.25))).terms).toEqual([B])
+  })
+  it('each kind resolves on its own', () => {
+    for (const kind of ['finger', 'stick', 'laser'] as const) {
+      expect(resolvePointer(word, [A, B], fill(at(kind, 0.65, 0.25))).terms).toEqual([B])
+    }
+  })
+  it('"these" follows the laser path, not the hand', () => {
+    const sweep = Array.from({ length: 11 }, (_, i) => ({ kind: 'laser' as const, confidence: 1, t: i * 100, x: 0.25 + 0.04 * i, y: 0.25 }))
+    const hand = Array.from({ length: 11 }, (_, i) => ({ kind: 'finger' as const, confidence: 1, t: i * 100 + 1, x: 0.9, y: 0.9 }))
+    const r = resolvePointer({ word: 'these', t: 500, isPointer: true }, [A, B], fill(sweep, hand))
     expect(r.terms.map(t => t.id)).toEqual([1, 2])
   })
 })

@@ -1,12 +1,14 @@
 import type { Box, Term } from '../core/types'
 import type { TipBuffer } from '../core/tipBuffer'
-import { BOARD_INTERVAL_MS, EMPTY_READS_TO_CLEAR, HAND_RECENT_MS, SETTLE_MS } from '../core/config'
-import { changedRegion, frameChanged, toGraySmall } from '../core/frameDiff'
+import { BOARD_INTERVAL_MS, EMPTY_READS_TO_CLEAR, HAND_RECENT_MS, LASER_MASK_MS, SETTLE_MS } from '../core/config'
+import { changedRegion, frameChanged, hideCells, toGraySmall } from '../core/frameDiff'
+import { kindOf } from '../vision/pointer'
 import { readBoard } from './boardClient'
 import { mergeTerms } from '../core/mergeTerms'
 import { uniquePhrases } from '../core/phrase'
 
-// Strict >: a hand seen exactly HAND_RECENT_MS ago still counts as recent.
+// Strict >: a hand seen exactly HAND_RECENT_MS ago still counts as recent. Only a hand counts:
+// a laser dot covers nothing, and a stick covers too little to be worth the risk of a false detection.
 export function shouldReadBoard(now: number, lastTipAt: number | null, changed: boolean): boolean {
   return changed && (lastTipAt === null || now - lastTipAt > HAND_RECENT_MS)
 }
@@ -42,13 +44,17 @@ export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms
     canvas.height = h
     const ctx = canvas.getContext('2d', { willReadFrequently: true })!
     ctx.drawImage(video, 0, 0, w, h)
-    const gray = toGraySmall(ctx.getImageData(0, 0, w, h).data, w, h)
+    // A laser dot is light, not ink: hide it, or it would count as a change that is never read (and a
+    // "this" said at an empty spot would be held instead of going silent).
+    const now = performance.now()
+    const lasers = tips.window(now - LASER_MASK_MS, now).filter(p => kindOf(p) === 'laser')
+    const gray = hideCells(toGraySmall(ctx.getImageData(0, 0, w, h).data, w, h), lastSeen, lasers)
     // Settle: count checks the picture has stayed still, so a read never starts mid-stroke or on a moving camera.
     stillTicks = lastSeen !== null && !frameChanged(lastSeen, gray) ? stillTicks + 1 : 0
     lastSeen = gray
     if (!isSettled(stillTicks)) return
     const changed = lastRead === null || frameChanged(lastRead, gray)
-    if (!shouldReadBoard(performance.now(), tips.lastAt(), changed)) return
+    if (!shouldReadBoard(now, tips.lastCoverAt(), changed)) return
     inFlight = true
     reading = (lastRead && changedRegion(lastRead, gray)) || FULL
     const gen = generation

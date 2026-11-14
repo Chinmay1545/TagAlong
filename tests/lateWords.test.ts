@@ -1,0 +1,219 @@
+import { describe, expect, it, vi } from 'vitest'
+import { TipBuffer } from '../src/core/tipBuffer'
+import { createLive } from '../src/live/live'
+import { readPointer } from '../src/core/resolver'
+import { LATE_WINDOW_MS, RECHECK_MS, TIP_WINDOW_MS, WEB_SPEECH_LAG_MS } from '../src/core/config'
+import type { Box, Resolution, Term } from '../src/core/types'
+import type { AnyPoint } from '../src/vision/pointer'
+import type { WordItem } from '../src/speech/words'
+import { BOARD_TERMS, G, T1, T3, centre, inOrder, move, rest } from './helpers/board'
+
+// Browser speech recognition gives no word timing: a word is only known when its result arrives, some
+// time after it was said. By then the finger may have left. And with the P key (or any fresh word), the
+// finger may only just be arriving. Both used to make a real "this" go silent.
+const c1 = centre(T1), c3 = centre(T3)
+const away = { x: 0.9, y: 0.9 }
+const names = (...ts: Term[]) => ts.map(t => t.phrase)
+
+// The pointer buffer holds points up to `now`; `more` are points that arrive after the word.
+function setup(points: AnyPoint[], now: number, opts: { pending?: Box | null; terms?: Term[] } = {}) {
+  let clock = now
+  let terms = opts.terms ?? BOARD_TERMS
+  const tips = new TipBuffer()
+  inOrder(points).forEach(p => tips.push(p))
+  const timers: { fn: () => void; ms: number }[] = []
+  const play = vi.fn((_r: Resolution) => ({ startedAt: clock + 10 }))
+  const live = createLive({
+    getTerms: () => terms, tips, player: { play, setEnabled: () => {} }, now: () => clock,
+    getPendingRegion: () => opts.pending ?? null, later: (fn, ms) => { timers.push({ fn, ms }) },
+  })
+  const got: string[][] = []
+  live.onResolution(r => got.push(r.terms.map(t => t.phrase)))
+  let seg = 0
+  const item = (word: string): WordItem[] => [{ content: word, isPartial: false, arrivedAt: clock, segment: ++seg }]
+  return {
+    live, got, play, timers,
+    browserSpeech: (word: string) => live.handleItems(item(word), null, true), // said a moment ago, arrives now
+    pKey: (word = 'this') => live.handleItems(item(word), null), // happens right now
+    transcribe: (word: string, saidAtSec: number) => live.handleItems([{ content: word, startTime: saidAtSec, isPartial: false, arrivedAt: clock, segment: ++seg }], 0),
+    // Time passes: more points arrive, then any waiting recheck runs.
+    pass: (ms: number, more: AnyPoint[] = []) => {
+      inOrder(more).forEach(p => tips.push(p))
+      clock += ms
+      timers.splice(0).forEach(t => t.fn())
+    },
+    setTerms: (t: Term[]) => { terms = t },
+  }
+}
+
+describe('browser speech: the word arrives after it was said', () => {
+  it('point, say "this", move away: still whispered, though the finger has left by the time the word arrives', () => {
+    // Rests on the 2x until 0.6 s, then leaves. The word arrives at 1.0 s.
+    const s = setup(inOrder(rest('finger', c1.x, c1.y, 0, 600), move('finger', c1, away, 633, 1000)), 1000)
+    s.browserSpeech('this')
+    expect(s.got).toEqual([names(T1)])
+    expect(s.play).toHaveBeenCalledTimes(1)
+  })
+  it('the same motion with the P key (which is "now", not late) is silent: the pointer has left', () => {
+    const s = setup(inOrder(rest('finger', c1.x, c1.y, 0, 600), move('finger', c1, away, 633, 1000)), 1000)
+    s.pKey()
+    s.pass(RECHECK_MS, move('finger', away, away, 1033, 1300))
+    expect(s.got).toEqual([[]])
+  })
+  it.each([300, 500, 700, 900])('works when the word arrives %i ms after the finger left', gap => {
+    const s = setup(inOrder(rest('finger', c1.x, c1.y, 0, 800), move('finger', c1, away, 833, 800 + gap)), 800 + gap)
+    s.browserSpeech('that')
+    expect(s.got).toEqual([names(T1)])
+  })
+  it('a rest that ended long before the word arrives does not count', () => {
+    const gap = WEB_SPEECH_LAG_MS + LATE_WINDOW_MS + 300
+    const s = setup(inOrder(rest('finger', c1.x, c1.y, 0, 800), move('finger', c1, away, 833, 800 + gap)), 800 + gap)
+    s.browserSpeech('this')
+    s.pass(RECHECK_MS)
+    expect(s.got).toEqual([[]])
+  })
+  it('still pointing when the word arrives: whispered at once', () => {
+    const s = setup(rest('finger', c3.x, c3.y, 0, 1000), 1000)
+    s.browserSpeech('this')
+    expect(s.got).toEqual([names(T3)])
+    expect(s.timers).toEqual([])
+  })
+  it('two rests before the word arrives: the one from about when the word was said wins', () => {
+    // On the top 2x until 0.3 s, on the bottom 2x from 0.45 s. The word arrives at 1.0 s, said about 0.6 s.
+    const s = setup(inOrder(rest('finger', c1.x, c1.y, 0, 300), move('finger', c1, c3, 333, 420), rest('finger', c3.x, c3.y, 450, 1000)), 1000)
+    s.browserSpeech('this')
+    expect(s.got).toEqual([names(T3)])
+  })
+  it('said on the first term, finger already resting on the next when the word arrives: the first term', () => {
+    // Top 2x until 0.7 s, then straight to the bottom 2x from 0.9 s. Said about 0.6 s, arrives 1.0 s.
+    const s = setup(inOrder(rest('finger', c1.x, c1.y, 0, 700), move('finger', c1, c3, 733, 870), rest('finger', c3.x, c3.y, 900, 1000)), 1000)
+    s.browserSpeech('this')
+    expect(s.got).toEqual([names(T1)])
+  })
+  it('"these" swept just before the word arrived still finds both terms', () => {
+    const s = setup(inOrder(move('finger', { x: 0.2, y: 0.285 }, { x: 0.7, y: 0.285 }, 0, 700), move('finger', { x: 0.7, y: 0.285 }, away, 733, 1300)), 1300, { terms: [T1, G] })
+    s.browserSpeech('these')
+    expect(s.got).toEqual([names(T1, G)])
+  })
+  it('a hand that only passed over a term a moment ago is still not pointing', () => {
+    const s = setup(move('finger', { x: -0.2, y: 0.285 }, { x: 1.2, y: 0.285 }, 0, 1000), 1000)
+    s.browserSpeech('that')
+    s.pass(RECHECK_MS, move('finger', { x: 1.2, y: 0.285 }, { x: 1.6, y: 0.285 }, 1033, 1300))
+    expect(s.got).toEqual([[]])
+    expect(s.play).not.toHaveBeenCalled()
+  })
+  it('a laser that was on the term when the word was said counts, even if it is off when the word arrives', () => {
+    const s = setup(inOrder(rest('laser', c1.x, c1.y, 0, 700, 0.005), rest('finger', away.x, away.y, 0, 1000)), 1000)
+    s.browserSpeech('this')
+    expect(s.got).toEqual([names(T1)])
+  })
+  it('words with exact timing (Transcribe) keep the exact rule: the pointer at the time the word was said', () => {
+    const s = setup(inOrder(rest('finger', c1.x, c1.y, 0, 600), move('finger', c1, c3, 633, 870), rest('finger', c3.x, c3.y, 900, 2000)), 2000)
+    s.transcribe('this', 0.3)
+    s.transcribe('that', 1.5)
+    expect(s.got).toEqual([names(T1), names(T3)])
+    expect(s.timers).toEqual([])
+  })
+})
+
+describe('the finger is only just arriving: wait a moment and look again', () => {
+  // Moving until 0.95 s, then resting on the 2x. The word comes at 1.0 s: only 50 ms of rest so far.
+  const arriving = inOrder(move('finger', away, c1, 500, 930), rest('finger', c1.x, c1.y, 950, 1000))
+  const staying = rest('finger', c1.x, c1.y, 1033, 1300)
+
+  it('P pressed as the finger lands: nothing yet, then whispered once the finger has rested', () => {
+    const s = setup(arriving, 1000)
+    s.pKey()
+    expect(s.got).toEqual([])
+    expect(s.timers.map(t => t.ms)).toEqual([RECHECK_MS])
+    s.pass(RECHECK_MS, staying)
+    expect(s.got).toEqual([names(T1)])
+    expect(s.play).toHaveBeenCalledTimes(1)
+  })
+  it('the same with a browser-speech word', () => {
+    const s = setup(arriving, 1000)
+    s.browserSpeech('this')
+    expect(s.got).toEqual([])
+    s.pass(RECHECK_MS, staying)
+    expect(s.got).toEqual([names(T1)])
+  })
+  it('the finger never settles: silent after the one recheck, and never again', () => {
+    const s = setup(arriving, 1000)
+    s.pKey()
+    s.pass(RECHECK_MS, move('finger', c1, away, 1033, 1300))
+    expect(s.got).toEqual([[]])
+    expect(s.timers).toEqual([])
+    s.pass(1000, rest('finger', c1.x, c1.y, 1333, 2300)) // rests later: too late for that word
+    expect(s.got).toEqual([[]])
+    expect(s.play).not.toHaveBeenCalled()
+  })
+  it('no pointer at all: silent after the recheck', () => {
+    const s = setup([], 1000)
+    s.pKey()
+    expect(s.got).toEqual([])
+    s.pass(RECHECK_MS)
+    expect(s.got).toEqual([[]])
+  })
+  it('a word that hits is whispered at once, with no recheck', () => {
+    const s = setup(rest('finger', c1.x, c1.y, 0, 1000), 1000)
+    s.pKey()
+    expect(s.got).toEqual([names(T1)])
+    expect(s.timers).toEqual([])
+  })
+  it('a finger resting on empty board is silent at once: waiting would not help', () => {
+    const s = setup(rest('finger', 0.1, 0.9, 0, 1000), 1000)
+    s.pKey()
+    expect(s.got).toEqual([[]])
+    expect(s.timers).toEqual([])
+  })
+  it('"these" is never rechecked', () => {
+    const s = setup([], 1000)
+    s.pKey('these')
+    expect(s.got).toEqual([[]])
+    expect(s.timers).toEqual([])
+  })
+  it('a timed word that arrived long after it was said is not rechecked: its moment has passed', () => {
+    const s = setup(move('finger', away, c1, 0, 3000), 3000)
+    s.transcribe('this', 1.0)
+    expect(s.got).toEqual([[]])
+    expect(s.timers).toEqual([])
+  })
+  it('the finger lands on new ink: after the recheck the word is held, then whispered when the box arrives', () => {
+    const fresh: Box = { x: 0.6, y: 0.6, w: 0.38, h: 0.38 }
+    const NEW: Term = { id: 10, latex: 'y', phrase: 'the new y', box: { x: 0.66, y: 0.66, w: 0.08, h: 0.08 } }
+    const at = { x: 0.7, y: 0.7 }
+    const s = setup(inOrder(move('finger', c1, at, 500, 930), rest('finger', at.x, at.y, 950, 1000)), 1000, { pending: fresh })
+    s.pKey()
+    s.pass(RECHECK_MS, rest('finger', at.x, at.y, 1033, 1300))
+    expect(s.got).toEqual([]) // held
+    s.setTerms([...BOARD_TERMS, NEW])
+    s.live.checkHeld()
+    expect(s.got).toEqual([names(NEW)])
+  })
+  it('two words waiting at once are each answered once', () => {
+    const s = setup(arriving, 1000)
+    s.pKey('this')
+    s.pKey('that')
+    s.pass(RECHECK_MS, staying)
+    expect(s.got).toEqual([names(T1), names(T1)])
+  })
+})
+
+describe('readPointer: looking at another moment or a wider window', () => {
+  const fill = (pts: AnyPoint[]) => { const b = new TipBuffer(10000); inOrder(pts).forEach(p => b.push(p)); return b }
+  const word = { word: 'this', t: 2000, isPointer: true }
+  const tips = fill([...rest('finger', c1.x, c1.y, 900, 1200), ...move('finger', c1, away, 1233, 2000)])
+  it('by default looks TIP_WINDOW_MS around the word time', () => {
+    expect(readPointer(word, BOARD_TERMS, tips).miss).toBe('not-pointing')
+    expect(readPointer(word, BOARD_TERMS, tips, { at: 2000, windowMs: TIP_WINDOW_MS }).miss).toBe('not-pointing')
+  })
+  it('can be asked to look around an earlier moment', () => {
+    expect(readPointer(word, BOARD_TERMS, tips, { at: 1300, windowMs: TIP_WINDOW_MS }).resolution.terms).toEqual([T1])
+  })
+  it('or through a wider window', () => {
+    expect(readPointer(word, BOARD_TERMS, tips, { at: 2000, windowMs: 1200 }).resolution.terms).toEqual([T1])
+  })
+  it('the word itself is passed through unchanged', () => {
+    expect(readPointer(word, BOARD_TERMS, tips, { at: 1300, windowMs: TIP_WINDOW_MS }).resolution.word).toBe(word)
+  })
+})
