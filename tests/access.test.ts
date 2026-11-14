@@ -51,4 +51,13 @@ describe('hosted access key', () => {
       expect((await hit(port, '/api/health', { Host: 'evil.example' })).status).toBe(403)
     } finally { server.close() }
   })
+  it('changing the case of an /api path does not skip the key', async () => {
+    const server = createApp(async () => '{"terms":[]}', undefined, undefined, { access }).listen(0)
+    try {
+      const { port } = server.address() as AddressInfo
+      expect((await hit(port, '/API/notes', H)).status).toBe(401)
+      expect((await hit(port, '/Api/Notes', H)).status).toBe(401)
+      expect((await hit(port, '/API/room-link?room=math201', H)).status).toBe(401)
+    } finally { server.close() }
+  })
 })

@@ -37,16 +37,18 @@ export function createApp(callModel: CallModel, synth?: Synth, callText?: (promp
       url.searchParams.delete('key') // keep the key out of history and screenshots
       return void res.redirect(302, url.pathname + url.search)
     }
-    if (req.path.startsWith('/api/') && req.path !== '/api/health' && !keyAllowed(access, req.headers.cookie) && !roomRoute(req, res)) return void res.status(401).json({ error: 'access key required' })
+    const path = req.path.toLowerCase() // Express routes ignore case, so the key check must too
+    if (path.startsWith('/api/') && path !== '/api/health' && !keyAllowed(access, req.headers.cookie) && !roomRoute(req, res)) return void res.status(401).json({ error: 'access key required' })
     next()
   })
   // Classroom relay: a student phone has no access key, only room tokens. They open exactly two routes:
   // /api/tts (headers x-room, x-room-token; the TTS guard below only voices phrases the camera published in that room)
   // and /api/room-status (each body entry carries its own token, checked in the handler).
   function roomRoute(req: express.Request, res: express.Response): boolean {
-    if (req.method === 'POST' && req.path === '/api/room-status') return true
+    const path = req.path.toLowerCase()
+    if (req.method === 'POST' && path === '/api/room-status') return true
     const room = req.get('x-room'), token = req.get('x-room-token')
-    if (req.path !== '/api/tts' || !opts?.rooms || !isRoomName(room) || !opts.rooms.verify(room, token ?? null)) return false
+    if (path !== '/api/tts' || !opts?.rooms || !isRoomName(room) || !opts.rooms.verify(room, token ?? null)) return false
     res.locals.room = room
     return true
   }

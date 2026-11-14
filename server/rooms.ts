@@ -60,11 +60,12 @@ export function createRoomHub({ access = LOCAL_ACCESS, maxStudents = MAX_STUDENT
 
   function onCamera(ws: WebSocket, name: string) {
     const r = roomOf(name)
+    const was = live(r)
     if (r.camera) r.camera.close(4000, 'replaced by another camera device')
     r.camera = ws
     r.open = true
     if (r.grace) { clearTimeout(r.grace); r.grace = undefined } // back in time: students never saw it leave
-    else toStudents(r, { type: 'status', live: true })
+    if (!was) toStudents(r, { type: 'status', live: true })
     listeners(r)
     ws.on('message', data => {
       if (r.camera !== ws) return

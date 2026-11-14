@@ -163,6 +163,16 @@ describe('room hub', () => {
     expect(await first.closed).toBe(4000)
   })
 
+  it('a camera that reconnects before its old socket closes does not re-announce the class to students', async () => {
+    const { camera, student } = await start()
+    await camera()
+    const s = await student()
+    expect(await s.next()).toEqual({ type: 'status', live: true })
+    await camera()
+    await settle()
+    expect(s.msgs).toEqual([])
+  })
+
   it('relays nothing invalid, and nothing a student sends (one way only)', async () => {
     const { camera, student } = await start()
     const c = await camera()
