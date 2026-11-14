@@ -305,3 +305,21 @@ describe('board loop: pending change region (for 1.5)', () => {
     h.stop()
   })
 })
+
+describe('board loop: every box gets its own spoken phrase', () => {
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
+
+  it('never shows two terms with the same phrase, so both whispers of "this cancels with that" play', async () => {
+    const h = harness()
+    h.replies.push([
+      { id: 1, latex: '2x', phrase: 'the 2 x in the middle', box: { x: 0.45, y: 0.38, w: 0.1, h: 0.06 } },
+      { id: 2, latex: '2x', phrase: 'the 2 x in the middle', box: { x: 0.45, y: 0.48, w: 0.1, h: 0.06 } },
+    ])
+    h.cam.scene = 120
+    await h.tick()
+    const last = h.shown.at(-1)!
+    expect(last).toHaveLength(2)
+    expect(new Set(last.map(x => x.phrase)).size).toBe(2)
+    h.stop()
+  })
+})

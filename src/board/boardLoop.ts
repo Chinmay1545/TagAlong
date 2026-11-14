@@ -4,6 +4,7 @@ import { BOARD_INTERVAL_MS, EMPTY_READS_TO_CLEAR, HAND_RECENT_MS, SETTLE_MS } fr
 import { changedRegion, frameChanged, toGraySmall } from '../core/frameDiff'
 import { readBoard } from './boardClient'
 import { mergeTerms } from '../core/mergeTerms'
+import { uniquePhrases } from '../core/phrase'
 
 // Strict >: a hand seen exactly HAND_RECENT_MS ago still counts as recent.
 export function shouldReadBoard(now: number, lastTipAt: number | null, changed: boolean): boolean {
@@ -31,7 +32,8 @@ export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms
   let lastSeen: Uint8Array | null = null // previous check's frame
   let stillTicks = 0 // checks in a row with no change
   let reading: Box | null = null // changed area of the read in flight
-  const show = (terms: Term[]) => { current = terms; onTerms(terms) }
+  // Every box gets its own phrase: the whisper player drops a phrase that is already sounding.
+  const show = (terms: Term[]) => { current = uniquePhrases(terms); onTerms(current) }
 
   const tick = () => {
     if (inFlight || video.readyState < 2 || !video.videoWidth) return

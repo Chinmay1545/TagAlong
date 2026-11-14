@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { latexToPlain, positionWords, phraseFor } from '../src/core/phrase'
+import { latexToPlain, positionWords, phraseFor, uniquePhrases } from '../src/core/phrase'
 import type { Term } from '../src/core/types'
 
 const box = (cx: number, cy: number) => ({ x: cx - 0.05, y: cy - 0.05, w: 0.1, h: 0.1 })
@@ -59,5 +59,39 @@ describe('phraseFor', () => {
     const terms: Term[] = JSON.parse(readFileSync('public/fixtures/board-fraction.json', 'utf8')).terms
     expect(terms.map(t => positionWords(t.box))).toEqual(['on top left', 'on top', 'on the bottom'])
     expect(phraseFor(terms[1].latex, terms[1].box)).toBe('the x plus 3 on top')
+  })
+})
+
+describe('uniquePhrases', () => {
+  const t = (id: number, latex: string, phrase: string, cx: number, cy: number): Term => ({ id, latex, phrase, box: box(cx, cy) })
+
+  it('tells apart a numerator and denominator that got the same phrase', () => {
+    const out = uniquePhrases([t(1, '2x', 'the 2 x in the middle', 0.5, 0.42), t(2, '2x', 'the 2 x in the middle', 0.5, 0.52)])
+    expect(out.map(x => x.phrase)).toEqual(['the upper 2 x in the middle', 'the lower 2 x in the middle'])
+  })
+
+  it('uses left and right when the twins sit side by side', () => {
+    const out = uniquePhrases([t(1, 'x', 'the x on top', 0.6, 0.2), t(2, 'x', 'the x on top', 0.4, 0.2)])
+    expect(out.map(x => x.phrase)).toEqual(['the right x on top', 'the left x on top'])
+  })
+
+  it('names three or more twins by order', () => {
+    const out = uniquePhrases([0.1, 0.3, 0.5, 0.7].map((cy, i) => t(i + 1, 'y', 'the y on the left', 0.2, cy)))
+    expect(out.map(x => x.phrase)).toEqual([
+      'the y on the left, first from the top', 'the y on the left, second from the top',
+      'the y on the left, third from the top', 'the y on the left, fourth from the top',
+    ])
+  })
+
+  it('leaves unique phrases, ids, boxes and order alone, and does not mutate the input', () => {
+    const input = [t(1, '2x', 'the 2 x on top', 0.5, 0.2), t(2, '3', 'the 3 on the bottom', 0.5, 0.8)]
+    const copy = structuredClone(input)
+    expect(uniquePhrases(input)).toEqual(copy)
+    expect(input).toEqual(copy)
+  })
+
+  it('compares phrases ignoring case and spacing', () => {
+    const out = uniquePhrases([t(1, '2x', 'The 2 x  in the middle', 0.5, 0.4), t(2, '2x', 'the 2 x in the middle', 0.5, 0.5)])
+    expect(new Set(out.map(x => x.phrase.toLowerCase())).size).toBe(2)
   })
 })
