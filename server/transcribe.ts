@@ -3,6 +3,7 @@ import { WebSocketServer } from 'ws'
 import { StartStreamTranscriptionCommand, TranscribeStreamingClient } from '@aws-sdk/client-transcribe-streaming'
 import { PCM_RATE } from '../src/core/config'
 import type { WordItem } from '../src/speech/words'
+import { LOCAL_ACCESS, hostAllowed, keyAllowed, originAllowed, type Access } from './access'
 
 type Ev = { items: WordItem[]; final?: { text: string; t0: number; t1: number } }
 
@@ -47,13 +48,11 @@ export function transcribeStream(audio: AsyncIterable<Uint8Array>): AsyncIterabl
 
 const MAX_QUEUE_BYTES = 160000 // ~5 s (tolerates a slow Transcribe start-up) of 16 kHz 16-bit PCM; beyond this we error out (dropping audio would skew word timing)
 
-export const originAllowed = (origin: string | undefined): boolean => {
-  if (!origin) return true // non-browser clients send no Origin
-  try { const h = new URL(origin).hostname; return h === 'localhost' || h === '127.0.0.1' } catch { return false }
-}
+export { originAllowed }
 
-export function attachTranscribe(server: http.Server, makeStream: (audio: AsyncIterable<Uint8Array>) => AsyncIterable<unknown> = transcribeStream): void {
-  const wss = new WebSocketServer({ server, path: '/ws/transcribe', maxPayload: 64 * 1024, verifyClient: ({ origin, req }: { origin: string; req: { headers: { host?: string } } }) => originAllowed(origin) && /^(127\.0\.0\.1|localhost)(:\d+)?$/.test(req.headers.host ?? '') })
+export function attachTranscribe(server: http.Server, makeStream: (audio: AsyncIterable<Uint8Array>) => AsyncIterable<unknown> = transcribeStream, access: Access = LOCAL_ACCESS): void {
+  const wss = new WebSocketServer({ server, path: '/ws/transcribe', maxPayload: 64 * 1024, verifyClient: ({ origin, req }: { origin: string; req: { headers: { host?: string; cookie?: string } } }) =>
+    originAllowed(origin, access) && hostAllowed(access, req.headers.host) && keyAllowed(access, req.headers.cookie) })
   wss.on('connection', (ws) => {
     let queue: Uint8Array[] = []
     let queued = 0
