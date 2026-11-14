@@ -1,12 +1,11 @@
 // Short tones for connection events only (joined, dropped, back, class started). Never played for a whisper.
-export type EarconKind = 'join' | 'start' | 'drop' | 'back' | 'mark'
+export type EarconKind = 'join' | 'start' | 'drop' | 'back'
 
 const NOTES: Record<EarconKind, number[]> = {
   join: [660, 880],
   start: [523, 659, 784],
   drop: [330, 247],
   back: [440, 660],
-  mark: [880],
 }
 const LEN = 0.12
 const GAP = 0.04

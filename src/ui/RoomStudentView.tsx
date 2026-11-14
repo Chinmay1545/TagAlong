@@ -46,7 +46,8 @@ const asResolution = (word: string, items: WhisperItem[]): Resolution => ({ word
 
 // autoStart: the phone home already took the press (sound unlocked) and picked this class, so connect on
 // mount. startedText is then what the screen reader hears first ("Math 201 started.").
-export function RoomStudentView({ room, token, deps, autoStart, startedText }: { room: string; token: string; deps?: Partial<Deps>; autoStart?: boolean; startedText?: string }) {
+export function RoomStudentView({ room, token, deps, autoStart, startedText, label }: { room: string; token: string; deps?: Partial<Deps>; autoStart?: boolean; startedText?: string; label?: string }) {
+  const name = label ?? room
   const d = useRef<Deps | null>(null)
   if (!d.current) d.current = {
     connect: deps?.connect ?? ((url, on) => connectRoom(url, on)),
@@ -69,6 +70,7 @@ export function RoomStudentView({ room, token, deps, autoStart, startedText }: {
   // Connection tones: one for joining, one when a class we waited for starts. Never for whispers.
   const chimed = useRef(!!startedText) // the phone home already played the start tone
   const waited = useRef(false)
+  const quiet = useRef(!!startedText) // the first live status must not talk over the started announcement
   const dropped = useRef(false) // the client reports 'reconnecting' on every retry: one drop tone per outage
   const stop = useRef<(() => void) | null>(null)
   // Whispers play strictly in order; each one first waits (bounded) for its server voice.
@@ -89,7 +91,7 @@ export function RoomStudentView({ room, token, deps, autoStart, startedText }: {
     if (!autoStart) { player.unlock(); earcons.unlock(); d.current!.unlockVoice() }
     const release = keepAwake()
     setStarted(true)
-    setSaid(startedText ?? `Joining ${room}.`)
+    setSaid(startedText ?? `Joining ${name}.`)
     const conn = connect(roomSocketUrl(location, { role: 'student', room, token }), {
       onMessage: raw => {
         const m = raw as ServerToStudent
@@ -97,7 +99,10 @@ export function RoomStudentView({ room, token, deps, autoStart, startedText }: {
           if (!m.live) waited.current = true
           else if (waited.current) { waited.current = false; chimed.current = true; earcons.play('start') }
           else if (!chimed.current) { chimed.current = true; earcons.play('join') }
-          setLive(m.live); setSaid(m.live ? `Connected to ${room}.` : `Waiting for ${room} to start.`) }
+          setLive(m.live)
+          const skip = quiet.current && m.live
+          quiet.current = false
+          if (!skip) setSaid(m.live ? `Connected to ${name}.` : `Waiting for ${name} to start.`) }
         else if (m.type === 'board') { board.current = m.phrases; void player.prepare(asTerms(m.phrases.map(p => ({ phrase: p, x: 0.5 })))) }
         else if (m.type === 'whisper') {
           const r = asResolution(m.word, m.items)
@@ -126,18 +131,18 @@ export function RoomStudentView({ room, token, deps, autoStart, startedText }: {
   if (!started) {
     return (
       <main className="student room-start">
-        <button type="button" className="room-start-btn" onClick={start}>Start listening to {room}</button>
+        <button type="button" className="room-start-btn" onClick={start}>Start listening to {name}</button>
       </main>
     )
   }
   return (
     <main className="student">
       <header className="s-head mono">
-        <span><span className="dot" aria-hidden="true" />{room}</span>
+        <span><span className="dot" aria-hidden="true" />{name}</span>
         <span>{live ? 'live' : 'waiting'}</span>
       </header>
       <section className="s-stage">
-        {phrase ? <p className="s-phrase">{phrase}</p> : <p className="s-empty">{live ? 'Listening.' : `Waiting for ${room} to start.`}</p>}
+        {phrase ? <p className="s-phrase">{phrase}</p> : <p className="s-empty">{live ? 'Listening.' : `Waiting for ${name} to start.`}</p>}
         <p className="sr" aria-live="assertive" aria-atomic="true">{said}</p>
       </section>
       <section className="s-actions" aria-label="Listen">

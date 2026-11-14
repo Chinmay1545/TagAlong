@@ -14,7 +14,7 @@ const mem = () => {
 }
 const cls = (room: string, label: string): SavedClass => ({ room, token: 't-' + room, label })
 
-function setup(saved: SavedClass[], statuses: Array<string[] | 'fail'>) {
+function setup(saved: SavedClass[], statuses: Array<string[] | 'fail' | 'hang'>) {
   const storage = mem()
   for (const c of [...saved].reverse()) saveClass(storage, c)
   const bodies: unknown[] = []
@@ -23,23 +23,28 @@ function setup(saved: SavedClass[], statuses: Array<string[] | 'fail'>) {
     bodies.push(JSON.parse(init.body))
     const s = statuses[Math.min(i++, statuses.length - 1)]
     if (s === 'fail') throw new Error('offline')
+    if (s === 'hang') return new Promise<Response>(() => {})
     return { ok: true, json: async () => ({ live: s }) } as Response
   })
   const urls: string[] = []
+  let on: { onMessage(m: unknown): void } | null = null
+  const release = vi.fn()
+  const keepAwake = vi.fn(() => release)
   const earcons = { unlock: vi.fn(), play: vi.fn() }
   const unlockVoice = vi.fn()
   const player = { unlock: vi.fn(), play: vi.fn(() => ({ startedAt: 0 })), prepare: vi.fn(async () => {}) }
   render(<PhoneHome deps={{
-    storage, fetch: fetch as never, pollMs: 5000, player, earcons, unlockVoice,
+    storage, fetch: fetch as never, pollMs: 5000, player, earcons, unlockVoice, keepAwake,
     room: {
-      connect: (url: string) => { urls.push(url); return { close: () => {} } },
+      connect: (url: string, h: { onMessage(m: unknown): void }) => { urls.push(url); on = h; return { close: () => {} } },
       keepAwake: () => () => {}, location: { protocol: 'https:', host: 'app.example' },
     },
   }} />)
   const said = () => document.querySelector('[aria-live]')!.textContent!.replace(/​/g, '')
   const press = (name: RegExp) => act(async () => { fireEvent.click(screen.getByRole('button', { name })) })
   const wait = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms) })
-  return { fetch, bodies, urls, player, earcons, unlockVoice, said, press, wait }
+  const recv = (m: unknown) => act(async () => { on!.onMessage(m) })
+  return { fetch, bodies, urls, player, earcons, unlockVoice, keepAwake, release, recv, said, press, wait }
 }
 
 describe('phone home (?classes)', () => {
@@ -50,7 +55,7 @@ describe('phone home (?classes)', () => {
 
   it('with one saved class, goes straight to its listening screen', () => {
     const t = setup([cls('math201', 'Math 201')], [])
-    expect(screen.getByRole('button', { name: /start listening to math201/i })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /start listening to math 201/i })).toBeTruthy()
     expect(t.fetch).not.toHaveBeenCalled()
   })
 
@@ -122,5 +127,73 @@ describe('phone home (?classes)', () => {
     cleanup()
     await t.wait(20000)
     expect(t.fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('holds the screen awake while waiting and lets go on unmount', async () => {
+    const t = setup([cls('math201', 'Math 201'), cls('bio110', 'Biology 110')], [[]])
+    expect(t.keepAwake).not.toHaveBeenCalled()
+    await t.press(/^start listening$/i)
+    expect(t.keepAwake).toHaveBeenCalledTimes(1)
+    expect(t.release).not.toHaveBeenCalled()
+    cleanup()
+    expect(t.release).toHaveBeenCalledTimes(1)
+  })
+
+  it('lets go of its own wake lock when it joins (the class screen takes its own)', async () => {
+    const t = setup([cls('math201', 'Math 201'), cls('bio110', 'Biology 110')], [['math201']])
+    await t.press(/^start listening$/i)
+    expect(t.release).toHaveBeenCalledTimes(1)
+  })
+
+  it('a second press does nothing: one check, one loop', async () => {
+    const t = setup([cls('math201', 'Math 201'), cls('bio110', 'Biology 110')], ['hang'])
+    const b = screen.getByRole('button', { name: /^start listening$/i })
+    await act(async () => { fireEvent.click(b); fireEvent.click(b) })
+    expect(t.fetch).toHaveBeenCalledTimes(1)
+    expect(t.keepAwake).toHaveBeenCalledTimes(1)
+    await t.wait(8000)
+    await t.wait(5000)
+    expect(t.fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('a check that never answers counts as not live, and the next poll still happens', async () => {
+    const t = setup([cls('math201', 'Math 201'), cls('bio110', 'Biology 110')], ['hang', ['bio110']])
+    await t.press(/^start listening$/i)
+    expect(t.said()).toBe('')
+    await t.wait(8000)
+    expect(t.said()).toBe('Waiting. Your classes: Math 201, Biology 110.')
+    await t.wait(5000)
+    expect(t.fetch).toHaveBeenCalledTimes(2)
+    expect(t.said()).toBe('Biology 110 started.')
+  })
+
+  it('the started announcement is still there after the class screen reports live', async () => {
+    const t = setup([cls('math201', 'Math 201'), cls('bio110', 'Biology 110')], [['bio110']])
+    await t.press(/^start listening$/i)
+    expect(t.said()).toBe('Biology 110 started.')
+    expect(document.querySelectorAll('[aria-live]').length).toBeLessThanOrEqual(2)
+    await t.recv({ type: 'status', live: true })
+    expect(t.said()).toBe('Biology 110 started.')
+    expect(screen.getByRole('main').textContent).toMatch(/biology 110/i)
+  })
+
+  it('autoStart does not unlock a second time', async () => {
+    const t = setup([cls('math201', 'Math 201'), cls('bio110', 'Biology 110')], [['bio110']])
+    await t.press(/^start listening$/i)
+    expect(t.player.unlock).toHaveBeenCalledTimes(1)
+    expect(t.earcons.unlock).toHaveBeenCalledTimes(1)
+    expect(t.unlockVoice).toHaveBeenCalledTimes(1)
+  })
+
+  it('choose: shows Choose a class. and moves focus to the first Join button', async () => {
+    const t = setup([cls('math201', 'Math 201'), cls('bio110', 'Biology 110')], [['math201', 'bio110']])
+    await t.press(/^start listening$/i)
+    expect(screen.getByRole('heading', { name: 'Choose a class.' })).toBeTruthy()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Join Math 201' }))
+  })
+
+  it('the visible waiting text is hidden from the screen reader (the live region speaks it)', async () => {
+    await setup([cls('math201', 'Math 201'), cls('bio110', 'Biology 110')], [[]]).press(/^start listening$/i)
+    expect(document.querySelector('.phone-waiting')!.getAttribute('aria-hidden')).toBe('true')
   })
 })

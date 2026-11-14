@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createWhisperPlayer } from '../audio/whisper'
+import { keepScreenAwake } from '../vision/wakeLock'
 import { RoomStudentView, roomTts } from '../ui/RoomStudentView'
 import { createEarcons } from './earcons'
 import { unlockVoice } from './voice'
@@ -17,10 +18,13 @@ type Deps = {
   player: NonNullable<RoomDeps['player']>
   earcons: NonNullable<RoomDeps['earcons']>
   unlockVoice: () => void
+  keepAwake: () => () => void
   room: Omit<RoomDeps, 'player' | 'earcons' | 'unlockVoice'>
 }
 
 const POLL_MS = 5000
+// A check that never answers counts as not live, so one hung request cannot stop the polling.
+const CHECK_TIMEOUT_MS = 8000
 
 const listText = (cs: SavedClass[]) => `Waiting. Your classes: ${cs.map(c => c.label).join(', ')}.`
 
@@ -38,10 +42,16 @@ export function PhoneHome({ deps }: { deps?: Partial<Deps> }) {
   const [said, setSaid] = useState('')
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const alive = useRef(true)
-  useEffect(() => () => { alive.current = false; if (timer.current) clearTimeout(timer.current) }, [])
+  const release = useRef<(() => void) | null>(null)
+  const began = useRef(false)
+  const firstJoin = useRef<HTMLButtonElement | null>(null)
+  const letGo = () => { release.current?.(); release.current = null }
+  useEffect(() => () => { alive.current = false; if (timer.current) clearTimeout(timer.current); letGo() }, [])
+  useEffect(() => { if (phase === 'choose') firstJoin.current?.focus() }, [phase])
 
   const join = (c: SavedClass, announce: boolean) => {
     target.current = c
+    letGo() // the class screen takes its own wake lock
     setJoined(c)
     setSaid(announce ? `${c.label} started.` : '')
     if (announce) earcons.current.play('start')
@@ -51,14 +61,20 @@ export function PhoneHome({ deps }: { deps?: Partial<Deps> }) {
   const check = async (first: boolean) => {
     const doFetch = deps?.fetch ?? fetch
     let rooms: string[] | null = null
+    const ctl = new AbortController()
+    let t: ReturnType<typeof setTimeout> | undefined
+    const timedOut = new Promise<never>((_, rej) => { t = setTimeout(() => { ctl.abort(); rej(new Error('timeout')) }, CHECK_TIMEOUT_MS) })
     try {
-      const r = await doFetch('/api/room-status', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ rooms: all.map(c => ({ room: c.room, token: c.token })) }),
-      })
-      if (r.ok) rooms = ((await r.json()) as { live: string[] }).live
-    } catch { /* offline: keep waiting */ }
+      rooms = await Promise.race([
+        doFetch('/api/room-status', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ rooms: all.map(c => ({ room: c.room, token: c.token })) }),
+          signal: ctl.signal,
+        }).then(async r => (r.ok ? ((await r.json()) as { live: string[] }).live : null)),
+        timedOut,
+      ])
+    } catch { /* offline or too slow: keep waiting */ } finally { clearTimeout(t) }
     if (!alive.current) return
     const now = all.filter(c => rooms?.includes(c.room))
     if (now.length === 1) return join(now[0], true)
@@ -68,6 +84,9 @@ export function PhoneHome({ deps }: { deps?: Partial<Deps> }) {
   }
 
   const begin = () => {
+    if (began.current) return
+    began.current = true
+    release.current = (deps?.keepAwake ?? keepScreenAwake)()
     player.current.unlock()
     earcons.current.unlock()
     ;(deps?.unlockVoice ?? unlockVoice)()
@@ -75,23 +94,30 @@ export function PhoneHome({ deps }: { deps?: Partial<Deps> }) {
   }
 
   if (all.length === 0) return <main className="student phone-home"><p className="s-empty">Open the class link from your disability office once.</p></main>
-  if (all.length === 1 && phase !== 'joined') {
-    return <RoomStudentView room={all[0].room} token={all[0].token} deps={{ ...deps?.room, ...(deps?.player && { player: deps.player }) }} />
+  if (all.length === 1) {
+    return <RoomStudentView room={all[0].room} token={all[0].token} label={all[0].label} deps={{ ...deps?.room, ...(deps?.player && { player: deps.player }) }} />
   }
-  if (phase === 'joined' && joined) {
-    return <RoomStudentView room={joined.room} token={joined.token} autoStart startedText={said || undefined} deps={{ ...deps?.room, player: player.current, earcons: earcons.current }} />
-  }
+  // One live region for the whole flow: it stays mounted across the join so "started" is heard.
   return (
-    <main className="student phone-home">
-      {phase === 'idle' && <button type="button" className="room-start-btn phone-start-btn" onClick={begin}>Start listening</button>}
-      {phase === 'waiting' && <p className="s-empty phone-waiting">{said}</p>}
-      {phase === 'choose' && (
-        <section className="s-actions phone-choose" aria-label="Live classes">
-          {live.map(c => <button key={c.room} type="button" className="s-btn phone-join-btn" onClick={() => join(c, false)}>Join {c.label}</button>)}
-        </section>
-      )}
+    <>
       <p className="sr" aria-live="assertive" aria-atomic="true">{said}</p>
-    </main>
+      {phase === 'joined' && joined ? (
+        <RoomStudentView room={joined.room} token={joined.token} label={joined.label} autoStart startedText={said || undefined} deps={{ ...deps?.room, player: player.current, earcons: earcons.current }} />
+      ) : (
+        <main className="student phone-home">
+          {phase === 'idle' && <button type="button" className="room-start-btn phone-start-btn" onClick={begin}>Start listening</button>}
+          {phase === 'waiting' && <p className="s-empty phone-waiting" aria-hidden="true">{said}</p>}
+          {phase === 'choose' && (
+            <>
+              <h1 className="s-empty phone-choose-title">Choose a class.</h1>
+              <section className="s-actions phone-choose" aria-label="Live classes">
+                {live.map((c, i) => <button key={c.room} ref={i === 0 ? firstJoin : undefined} type="button" className="s-btn phone-join-btn" onClick={() => join(c, false)}>Join {c.label}</button>)}
+              </section>
+            </>
+          )}
+        </main>
+      )}
+    </>
   )
 }
 

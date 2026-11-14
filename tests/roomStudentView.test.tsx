@@ -232,3 +232,29 @@ describe('connection earcons', () => {
     expect(kinds(t.earcons)).toEqual([])
   })
 })
+
+describe('saved label and the started announcement', () => {
+  const mount = (props: Record<string, unknown>) => {
+    let on: { onMessage(m: unknown): void } | null = null
+    render(<RoomStudentView room="math201" token="tok" {...props} deps={{
+      connect: (_u, h) => { on = h; return { send: () => {}, close: () => {} } },
+      player: { unlock: vi.fn(), play: vi.fn(() => ({ startedAt: 0 })), prepare: vi.fn(async () => {}) }, keepAwake: () => () => {},
+      location: { protocol: 'https:', host: 'h' }, earcons: { unlock: vi.fn(), play: vi.fn() }, unlockVoice: vi.fn(),
+    }} />)
+    return { recv: (m: unknown) => act(async () => { on!.onMessage(m) }), said: () => document.querySelector('[aria-live]')!.textContent!.replace(/​/g, '') }
+  }
+  it('uses the saved label in the button and the status text', async () => {
+    const t = mount({ label: 'Math 201' })
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Start listening to Math 201' })) })
+    await t.recv({ type: 'status', live: true })
+    expect(t.said()).toBe('Connected to Math 201.')
+  })
+  it('startedText is said first and the first live status does not replace it; later ones do', async () => {
+    const t = mount({ autoStart: true, startedText: 'Math 201 started.', label: 'Math 201' })
+    expect(t.said()).toBe('Math 201 started.')
+    await t.recv({ type: 'status', live: true })
+    expect(t.said()).toBe('Math 201 started.')
+    await t.recv({ type: 'status', live: false })
+    expect(t.said()).toBe('Waiting for Math 201 to start.')
+  })
+})
