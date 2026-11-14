@@ -9,7 +9,7 @@ import { createApp } from '../server/index'
 describe('healthFrom', () => {
   it('all configured via anthropic + aws region', () => {
     expect(healthFrom({ ANTHROPIC_API_KEY: 'k', AWS_REGION: 'us-east-1' }, '1.2.3'))
-      .toEqual({ ok: true, board: 'anthropic', tts: true, notes: true, transcribe: 'configured', share: false, provider: { board: 'anthropic', notes: 'anthropic' }, version: '1.2.3' })
+      .toEqual({ ok: true, board: 'anthropic', tts: true, voice: 'polly', notes: true, transcribe: 'configured', share: false, provider: { board: 'anthropic', notes: 'anthropic' }, version: '1.2.3' })
   })
   it('bedrock board when only BOARD_MODEL_ID', () => {
     const h = healthFrom({ BOARD_MODEL_ID: 'm', AWS_REGION: 'us-east-1' }, 'v')
@@ -17,7 +17,7 @@ describe('healthFrom', () => {
   })
   it('empty env is not ok and exposes no values', () => {
     const h = healthFrom({}, 'v')
-    expect(h).toEqual({ ok: false, board: 'missing', tts: false, notes: false, transcribe: 'missing', share: false, provider: { board: 'missing', notes: 'missing' }, version: 'v' })
+    expect(h).toEqual({ ok: false, board: 'missing', tts: false, voice: 'browser', notes: false, transcribe: 'missing', share: false, provider: { board: 'missing', notes: 'missing' }, version: 'v' })
   })
   it('missing tts makes ok false', () => {
     expect(healthFrom({ ANTHROPIC_API_KEY: 'k' }, 'v').ok).toBe(false)

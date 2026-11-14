@@ -5,7 +5,7 @@ export type HealthLike = { ok: boolean; board: string; tts: boolean; notes: bool
 export function missingLines(h: HealthLike): string[] {
   const out: string[] = []
   if (h.board === 'missing') out.push('Board reader: not configured — using the saved demo board only.')
-  if (!h.tts) out.push('Voice: Polly not configured — using the browser voice.')
+  if (!h.tts) out.push('Voice: no voice service configured — using the browser voice.')
   if (!h.notes) out.push('Notes: not configured.')
   if (h.transcribe === 'missing') out.push('Speech: browser recognition (Transcribe not configured).')
   return out
