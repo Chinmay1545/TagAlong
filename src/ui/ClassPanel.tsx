@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { renderSVG } from 'uqr'
 import type { Classroom } from '../live/classroom'
 import type { RoomState } from '../live/roomClient'
 
@@ -46,6 +47,7 @@ export function ClassPanel({ classroom, onLiveChange }: { classroom: Classroom; 
         <>
           <span className="class-state">{state === 'open' ? `Live · ${count} listening` : STATE_TEXT[state]}</span>
           <a href={link} target="_blank" rel="noreferrer">student link ({classroom.room()})</a>
+          <div className="class-qr" role="img" aria-label={`QR code to join ${name.trim()}`} dangerouslySetInnerHTML={{ __html: renderSVG(link) }} />
           <button type="button" onClick={copy}>{copied ? 'Copied' : 'Copy link'}</button>
           <button type="button" onClick={close}>Close class</button>
         </>

@@ -74,3 +74,16 @@ describe('class panel (camera device)', () => {
     expect((screen.getByLabelText(/class name/i) as HTMLInputElement).value).toBe('bio110')
   })
 })
+
+describe('class panel QR code', () => {
+  it('shows a QR code to join while the class is open, and not before or after', async () => {
+    const f = fakeClassroom()
+    render(<ClassPanel classroom={f.c} onLiveChange={() => {}} />)
+    expect(screen.queryByRole('img', { name: /qr code to join/i })).toBeNull()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /open class/i })) })
+    const qr = screen.getByRole('img', { name: 'QR code to join math201' })
+    expect(qr.querySelector('svg')).not.toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /close class/i }))
+    expect(screen.queryByRole('img', { name: /qr code to join/i })).toBeNull()
+  })
+})
