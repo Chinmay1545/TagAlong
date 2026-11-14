@@ -16,6 +16,7 @@ export type Live = {
   setWhisperEnabled(on: boolean): void
   resetUtterance(): void
   checkHeld(): void // call when the terms change, and every so often: resolves or gives up held words
+  cancelWaiting(): void // drop words waiting for their second look (board reset, speech stopped, screen closed)
 }
 
 // A pointer word that found no box but pointed at board ink not read yet ("write, then say this").
@@ -46,15 +47,32 @@ export function createLive({ getTerms, tips, player, now = () => performance.now
     const latency = played ? played.startedAt - r.word.t : null
     resCbs.forEach(cb => cb(r, latency))
   }
+  // Words keep the order they were said in. While one word waits for its second look, later words queue
+  // behind it. `round` goes up on cancelWaiting, so a timer set before it does nothing when it fires.
+  let waiting = false
+  let round = 0
+  let queue: { word: WordEvent; when: When }[] = []
+  const take = (word: WordEvent, when: When) => {
+    if (waiting) { queue.push({ word, when }); return }
+    resolve(word, when, true)
+  }
   // One pointer word. when: the moment to look at. recheck: allowed to wait and look once more.
   const resolve = (word: WordEvent, when: When, recheck: boolean) => {
     // The gate runs first: a word said with nothing resting on the board ('not-pointing') is silent
     // and is never held, so it cannot be whispered late when a box shows up.
-    const { resolution, aim, miss } = readPointer(word, getTerms(), tips, when)
-    if (miss === 'not-pointing' && recheck && SINGLE.has(word.word) && now() < when.at + when.windowMs) {
-      // Nothing is resting yet, but the time around the word is not over: the finger may just be landing.
-      // Look once more shortly. (A word whose moment has fully passed is not rechecked.)
-      later(() => resolve(word, when, false), RECHECK_MS)
+    const { resolution, aim, miss, landing } = readPointer(word, getTerms(), tips, when)
+    if ((miss === 'not-pointing' || landing) && recheck && SINGLE.has(word.word) && now() < when.at + when.windowMs) {
+      // Nothing is resting yet, or the pointer is just settling on a new spot while an older rest exists.
+      // The time around the word is not over, so look once more shortly instead of answering silent or
+      // with the older spot. (A word whose moment has fully passed is not rechecked.)
+      waiting = true
+      const mine = round
+      later(() => {
+        if (mine !== round) return // cancelled
+        waiting = false
+        resolve(word, when, false)
+        while (!waiting && queue.length) { const next = queue.shift()!; resolve(next.word, next.when, true) }
+      }, RECHECK_MS)
       return
     }
     if (miss === 'empty-space' && aim && SINGLE.has(word.word)) {
@@ -71,9 +89,10 @@ export function createLive({ getTerms, tips, player, now = () => performance.now
         // A late word (browser speech) was said some time before it arrived, and the finger may have left
         // since. Look around the moment it was probably said, and further back, instead of around now.
         const when: When = late ? { at: word.t - WEB_SPEECH_LAG_MS, windowMs: LATE_WINDOW_MS } : { at: word.t, windowMs: TIP_WINDOW_MS }
-        resolve(word, when, true)
+        take(word, when)
       }
     },
+    cancelWaiting() { round++; waiting = false; queue = [] },
     checkHeld() {
       if (!held.length) return
       const terms = getTerms()

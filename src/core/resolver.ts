@@ -103,10 +103,24 @@ export function dwellPoint(
   dwellMs = DWELL_MS,
   radius = DWELL_RADIUS,
 ): { x: number; y: number } | null {
+  return dwellRead(track, t, windowMs, dwellMs, radius).aim
+}
+
+// dwellPoint, plus `landing`: the pointer's newest points are the start of a rest that is still too short to
+// count, but that would beat the rest found (it is nearer the word) if the pointer stays there. The caller
+// can then look again a moment later instead of answering with the older rest.
+export function dwellRead(
+  track: TipSample[],
+  t: number,
+  windowMs = TIP_WINDOW_MS,
+  dwellMs = DWELL_MS,
+  radius = DWELL_RADIUS,
+): { aim: { x: number; y: number } | null; landing: boolean } {
   const s = track.filter(p => Math.abs(p.t - t) <= windowMs)
   let best: { x: number; y: number } | null = null
   let bestGap = Infinity
   let bestSpan = 0
+  let tail: { start: number; span: number; n: number } | null = null // the run that ends at the newest point
   for (let i = 0; i < s.length; i++) {
     let sx = s[i].x, sy = s[i].y, n = 1
     let j = i
@@ -117,6 +131,7 @@ export function dwellPoint(
       n++
     }
     const span = s[j].t - s[i].t
+    if (j === s.length - 1 && !tail) tail = { start: s[i].t, span, n }
     if (span < dwellMs) continue
     const gap = t < s[i].t ? s[i].t - t : t > s[j].t ? t - s[j].t : 0
     if (gap < bestGap || (gap === bestGap && span > bestSpan)) {
@@ -125,20 +140,23 @@ export function dwellPoint(
       bestSpan = span
     }
   }
-  return best
+  // One point alone is a pointer on the move, not a landing.
+  const landing = !!best && !!tail && tail.n >= 2 && tail.span < dwellMs && Math.max(0, tail.start - t) < bestGap
+  return { aim: best, landing }
 }
 
 // Why a pointer word found no term: nothing was really pointing, or it pointed at a spot with no box.
 // Only the second can be "ink not read yet" (live.ts holds it); the first must stay silent.
 export type PointerMiss = 'not-pointing' | 'empty-space'
-export type PointerRead = { resolution: Resolution; aim: { x: number; y: number } | null; miss: PointerMiss | null }
+// landing: the answer comes from an older rest while the pointer is just settling somewhere new (see dwellRead).
+export type PointerRead = { resolution: Resolution; aim: { x: number; y: number } | null; miss: PointerMiss | null; landing: boolean }
 
 // when: the moment to look at and how far either side of it. By default the word's own time and
 // TIP_WINDOW_MS; live.ts looks earlier and wider for words that arrive late (browser speech).
 export type When = { at: number; windowMs: number }
 
 export function readPointer(word: WordEvent, terms: Term[], tips: TipBuffer, when?: When): PointerRead {
-  const none = (miss: PointerMiss, aim: PointerRead['aim'] = null): PointerRead => ({ resolution: { word, terms: [] }, aim, miss })
+  const none = (miss: PointerMiss, aim: PointerRead['aim'] = null): PointerRead => ({ resolution: { word, terms: [] }, aim, miss, landing: false })
   if (!word.isPointer) return none('not-pointing')
   const t = when?.at ?? word.t
   const windowMs = when?.windowMs ?? TIP_WINDOW_MS
@@ -147,14 +165,14 @@ export function readPointer(word: WordEvent, terms: Term[], tips: TipBuffer, whe
     // A sweep across several terms: no rest needed.
     const track = tips.lead(t - 1000, t + 1000)
     const found = termsAlongPath(terms, track, t - 1000, t + 1000)
-    return found.length ? { resolution: { word, terms: found }, aim: null, miss: null } : none(track.length ? 'empty-space' : 'not-pointing')
+    return found.length ? { resolution: { word, terms: found }, aim: null, miss: null, landing: false } : none(track.length ? 'empty-space' : 'not-pointing')
   }
   // this / that / here: whisper only if the pointer (of any kind) rested on one spot around the word.
   // The pointer that counts is the one seen around the word itself (a laser put away a moment ago does not).
-  const aim = dwellPoint(tips.leadAt(t, windowMs), t, windowMs)
+  const { aim, landing } = dwellRead(tips.leadAt(t, windowMs), t, windowMs)
   if (!aim) return none('not-pointing')
   const term = termAt(terms, aim.x, aim.y)
-  return term ? { resolution: { word, terms: [term] }, aim, miss: null } : none('empty-space', aim)
+  return term ? { resolution: { word, terms: [term] }, aim, miss: null, landing } : { ...none('empty-space', aim), landing }
 }
 
 export function resolvePointer(word: WordEvent, terms: Term[], tips: TipBuffer): Resolution {
