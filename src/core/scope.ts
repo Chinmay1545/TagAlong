@@ -33,7 +33,12 @@ const largest = (ts: Term[]) => ts.reduce<Term | null>((b, t) => (!b || area(t) 
 // The group a scope word picks for an aim, or null (the caller keeps its normal answer).
 export function groupFor(terms: Term[], aim: { x: number; y: number }, scope: string, maxDist = MAX_DIST): Term | null {
   const groups = terms.filter(t => groupKind(t.phrase) && grow(t, aim, maxDist))
-  const kind = (...ks: string[]) => groups.filter(g => ks.includes(groupKind(g.phrase)!))
+  // A group the aim is really inside beats one that is only near (neighbouring brackets are a few hundredths apart).
+  const kind = (...ks: string[]) => {
+    const all = groups.filter(g => ks.includes(groupKind(g.phrase)!))
+    const exact = all.filter(g => grow(g, aim, 0))
+    return exact.length ? exact : all
+  }
   if (scope === 'whole') return largest(groups)
   if (scope === 'side') return smallest(kind('left side', 'right side'))
   const direct = smallest(kind(scope))

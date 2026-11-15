@@ -1,4 +1,5 @@
 import { groupKind } from './scope'
+import { readingOrder } from '../live/boardQuery'
 import { speakMath } from './speakMath'
 import type { Box } from './types'
 
@@ -67,12 +68,15 @@ export function phraseFor(latex: string, _box: Box, tag?: string): string {
 
 // Phrases come from position bands in the frame, so two terms can get the same one (a 2x numerator and a 2x
 // denominator mid-board are both "the 2 x in the middle"). The whisper player drops a phrase that is already
-// sounding, so "this cancels with that" would play once. Fix: within each group of equal phrases, name the
-// terms relative to each other along the axis they are spread on ("the upper 2 x in the middle").
+// sounding, so "this cancels with that" would play once. Fix: within each set of equal phrases, tell the members
+// apart by the MATH (never by screen words): the top / bottom / side group they sit in, the brackets they sit in,
+// the equation or fraction they belong to ("in equation 2"); only if that still leaves twins, by their order
+// along the axis they are spread on.
 // Names are always derived from each term's ORIGINAL phrase, never from an earlier renamed one, so they stay
 // right across reads (a third twin written above a pair, or one of a pair erased). Term (src/core/types.ts) is
 // frozen, so the original phrase of every term this function returns is remembered here, keyed by object.
-// Returns new objects only where the phrase changes; ids, boxes and order are unchanged; the input is not mutated.
+// Returns new objects only where the phrase changes; ids, boxes and order are unchanged except that exact twins
+// (see tidyTerms) are dropped; the input is not mutated.
 const ORDER = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth']
 const norm = (p: string) => p.trim().replace(/\s+/g, ' ').toLowerCase()
 const centre = (b: Box) => ({ x: b.x + b.w / 2, y: b.y + b.h / 2 })
@@ -81,31 +85,101 @@ const withAdjective = (phrase: string, adj: string) => {
   return /^the\s/i.test(p) ? `${p.slice(0, 3)} ${adj} ${p.slice(4)}` : `the ${adj} ${p}`
 }
 
+const TOL = 0.01
+const inside = (a: Box, b: Box) => a.x >= b.x - TOL && a.y >= b.y - TOL && a.x + a.w <= b.x + b.w + TOL && a.y + a.h <= b.y + b.h + TOL
+const area = (b: Box) => b.w * b.h
+const sameBox = (a: Box, b: Box) => inside(a, b) && inside(b, a)
+const GROUP_HEAD = /^the [a-z ]+: /
+
+// The reader's tagging varies: a bracket inside a numerator can come back tagged "numerator" too. A top/bottom
+// group lying strictly inside a larger group of the same kind is really the brackets. Exact twins (same phrase,
+// same box: the reader listed one thing twice) are dropped, the first one stays. Pure and idempotent.
+export function tidyTerms<T extends { phrase: string; box: Box }>(terms: T[]): T[] {
+  const renamed = terms.map(t => {
+    const k = groupKind(t.phrase)
+    if (k !== 'top' && k !== 'bottom') return t
+    const nested = terms.some(o => o !== t && groupKind(o.phrase) === k && inside(t.box, o.box) && area(o.box) > area(t.box))
+    return nested ? { ...t, phrase: t.phrase.replace(/^the (top|bottom): /, 'the brackets: ') } : t
+  })
+  return renamed.filter((t, i) => !renamed.slice(0, i).some(o => norm(o.phrase) === norm(t.phrase) && sameBox(o.box, t.box)))
+}
+
 const original = new WeakMap<object, string>()
 const originalOf = (t: { phrase: string }) => original.get(t) ?? t.phrase
 
-export function uniquePhrases<T extends { phrase: string; box: Box }>(terms: T[]): T[] {
-  const groups = new Map<string, number[]>()
-  terms.forEach((t, i) => { const k = norm(originalOf(t)); groups.set(k, [...(groups.get(k) ?? []), i]) })
-  const renamed = new Map<number, string>()
-  for (const idx of groups.values()) {
-    if (idx.length < 2) continue
+const SIDE_PLACE: Record<string, string> = { top: 'in the top', bottom: 'in the bottom', 'left side': 'on the left side', 'right side': 'on the right side' }
+
+export function uniquePhrases<T extends { phrase: string; box: Box }>(input: T[]): T[] {
+  // Work from original phrases, so the result does not depend on an earlier call's renames.
+  const restored = input.map(t => (originalOf(t) === t.phrase ? t : { ...t, phrase: originalOf(t) }))
+  const back = new Map<object, T>(restored.map((r, i) => [r, input[i]]))
+  const terms = tidyTerms(restored).map(r => back.get(r) ?? r)
+  const base = terms.map(originalOf)
+  const kinds = base.map(groupKind)
+  // The smallest group around term i (not itself, not a same-box twin) that `ok` accepts, or -1.
+  const smallestAround = (i: number, ok: (j: number) => boolean) => {
+    let best = -1
+    terms.forEach((o, j) => {
+      if (j !== i && ok(j) && inside(terms[i].box, o.box) && !sameBox(terms[i].box, o.box) && (best < 0 || area(o.box) < area(terms[best].box))) best = j
+    })
+    return best
+  }
+  // A top-level group sits inside no other group (of two same-box twins, the first one is the outer).
+  const tops = terms.map((_, j) => j).filter(j => !!kinds[j] && !terms.some((o, k) =>
+    k !== j && !!kinds[k] && inside(terms[j].box, o.box) && (area(o.box) > area(terms[j].box) || (sameBox(o.box, terms[j].box) && k < j))))
+
+  // Each stage gives a member's extra words, or null. A stage that cannot tell them apart changes nothing.
+  type Stage = (i: number, cur: string) => string | null
+  const stages: Stage[] = [
+    (i, cur) => { // the top / bottom / side group it sits in
+      const j = smallestAround(i, k => !!kinds[k] && Object.hasOwn(SIDE_PLACE, kinds[k]!))
+      const place = j < 0 ? null : SIDE_PLACE[kinds[j]!]
+      return place && !norm(cur).includes(place) ? `, ${place}` : null
+    },
+    i => { // the brackets it sits in, named by their own math
+      const j = smallestAround(i, k => kinds[k] === 'brackets')
+      return j < 0 ? null : `, in the brackets ${base[j].replace(GROUP_HEAD, '')}`
+    },
+    i => { // the equation or fraction it belongs to, numbered in reading order among those of its kind
+      const j = smallestAround(i, k => tops.includes(k))
+      if (j < 0) return null
+      const same = readingOrder(tops.filter(k => kinds[k] === kinds[j]).map(k => terms[k]))
+      return same.length < 2 ? null : `, in ${kinds[j]} ${same.indexOf(terms[j]) + 1}`
+    },
+  ]
+
+  const cur = [...base]
+  const bySet = (idx: number[]) => {
+    const m = new Map<string, number[]>()
+    idx.forEach(i => { const k = norm(cur[i]); m.set(k, [...(m.get(k) ?? []), i]) })
+    return [...m.values()].filter(s => s.length > 1)
+  }
+  let sets = bySet(cur.map((_, i) => i))
+  for (const stage of stages) {
+    const next: number[][] = []
+    for (const set of sets) {
+      const add = set.map(i => stage(i, cur[i]))
+      set.forEach((i, n) => { if (add[n]) cur[i] = `${cur[i]}${add[n]}` })
+      next.push(...bySet(set))
+    }
+    sets = next
+  }
+  // Still equal: their order along the axis they are spread on.
+  for (const idx of sets) {
     const pts = idx.map(i => centre(terms[i].box))
     const spread = (a: 'x' | 'y') => Math.max(...pts.map(p => p[a])) - Math.min(...pts.map(p => p[a]))
     const axis: 'x' | 'y' = spread('y') >= spread('x') ? 'y' : 'x'
     const sorted = [...idx].sort((a, b) => centre(terms[a].box)[axis] - centre(terms[b].box)[axis] || a - b)
     sorted.forEach((i, rank) => {
-      const p = originalOf(terms[i])
+      const p = cur[i]
       // A group phrase keeps `the KIND: ` at the front (groupKind needs it), so it always takes the suffix form.
-      if (sorted.length === 2 && !groupKind(p)) renamed.set(i, withAdjective(p, axis === 'y' ? (rank ? 'lower' : 'upper') : (rank ? 'right' : 'left')))
-      else renamed.set(i, `${p.trim().replace(/\s+/g, ' ')}, ${ORDER[rank] ?? `number ${rank + 1}`} from the ${axis === 'y' ? 'top' : 'left'}`)
+      if (sorted.length === 2 && !kinds[i]) cur[i] = withAdjective(p, axis === 'y' ? (rank ? 'lower' : 'upper') : (rank ? 'right' : 'left'))
+      else cur[i] = `${p.trim().replace(/\s+/g, ' ')}, ${ORDER[rank] ?? `number ${rank + 1}`} from the ${axis === 'y' ? 'top' : 'left'}`
     })
   }
   return terms.map((t, i) => {
-    const base = originalOf(t)
-    const phrase = renamed.get(i) ?? base // a term no longer in a group gets its plain phrase back
-    const out = phrase === t.phrase ? t : { ...t, phrase }
-    original.set(out, base)
+    const out = cur[i] === t.phrase ? t : { ...t, phrase: cur[i] }
+    original.set(out, base[i])
     return out
   })
 }

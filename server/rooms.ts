@@ -3,7 +3,7 @@ import type { Duplex } from 'node:stream'
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { WebSocketServer, WebSocket } from 'ws'
 import { LOCAL_ACCESS, hostAllowed, keyAllowed, originAllowed, type Access } from './access'
-import { isRoomName, parseCameraMsg, MAX_PHRASE, type ServerToCamera, type ServerToStudent } from '../src/live/roomProtocol'
+import { isRoomName, parseCameraMsg, clipPhrase, type ServerToCamera, type ServerToStudent } from '../src/live/roomProtocol'
 
 // Classroom relay hub at /ws/room. One camera device per room publishes; every student phone in the room
 // receives. One way only: whatever a student sends is ignored. No AI, no audio: text messages only.
@@ -51,7 +51,7 @@ export function createRoomHub({ access = LOCAL_ACCESS, maxStudents = MAX_STUDENT
   const toStudents = (r: Room, m: ServerToStudent) => { for (const s of r.students) send(s, m) }
   const listeners = (r: Room) => { if (r.camera) send(r.camera, { type: 'listeners', count: r.students.size }) }
   const remember = (r: Room, phrase: string) => {
-    const p = phrase.trim().slice(0, MAX_PHRASE)
+    const p = clipPhrase(phrase)
     r.phrases.delete(p)
     r.phrases.add(p) // newest last
     if (r.phrases.size > RECENT_PHRASES) r.phrases.delete(r.phrases.values().next().value!)
@@ -129,7 +129,7 @@ export function createRoomHub({ access = LOCAL_ACCESS, maxStudents = MAX_STUDENT
     tokenFor,
     verify,
     // Only phrases the camera published in that room may be voiced for a student of that room.
-    allowsPhrase: (room: string, text: string) => rooms.get(room)?.phrases.has(text.trim().slice(0, MAX_PHRASE)) ?? false,
+    allowsPhrase: (room: string, text: string) => rooms.get(room)?.phrases.has(clipPhrase(text)) ?? false,
     attach(server: http.Server) { server.on('upgrade', handleUpgrade) },
     isLive: (room: string) => { const r = rooms.get(room); return !!r && live(r) },
     close() { clearInterval(ping); for (const r of rooms.values()) clearTimeout(r.grace); rooms.clear(); for (const ws of wss.clients) ws.terminate(); wss.close() },

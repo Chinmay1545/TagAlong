@@ -6,6 +6,7 @@ import { connectRoom, roomSocketUrl, type RoomState } from './roomClient'
 
 // Camera device side of the classroom relay: opens a class (a room), publishes every whisper and the board,
 // and re-sends the class status and latest board after a reconnect so late or returning students are current.
+const MAX_BOARD_JSON = 15000
 type Conn = { send(m: unknown): void; close(): void }
 type Deps = {
   connect: (url: string, on: { onMessage(m: unknown): void; onState?(s: RoomState): void }) => Conn
@@ -67,7 +68,10 @@ export function createClassroom(deps: Deps = defaultDeps()) {
     whisper(r: Resolution) { const m = whisperFromResolution(r); if (m) send(m) },
     board(terms: Term[]) {
       const clip = (ps: string[]) => ps.slice(0, MAX_BOARD_PHRASES).map(clipPhrase) // the server drops a whole board over either limit
-      board = { type: 'board', phrases: clip(readingOrder(terms).map(t => t.phrase)), overview: clip(overview(terms)) }
+      const msg = { type: 'board' as const, phrases: clip(readingOrder(terms).map(t => t.phrase)), overview: clip(overview(terms)) }
+      // The socket takes 16 KB: drop phrases from the end (the overview stays first), then overview lines, until it fits.
+      while (JSON.stringify(msg).length > MAX_BOARD_JSON && (msg.phrases.length || msg.overview.length)) (msg.phrases.length ? msg.phrases : msg.overview).pop()
+      board = msg
       send(board)
     },
     notice(text: string) { send({ type: 'notice', text }) },

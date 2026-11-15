@@ -1,4 +1,5 @@
-import { WHISPER_GAP_MS, TTS_MAX_CHARS, MAX_QUEUE_WAIT_MS } from '../core/config'
+import { WHISPER_GAP_MS, MAX_QUEUE_WAIT_MS } from '../core/config'
+import { clipPhrase } from '../live/roomProtocol'
 import { speakMath } from '../core/speakMath'
 import type { Resolution, Term } from '../core/types'
 
@@ -61,7 +62,7 @@ export function createWhisperPlayer(opts: Opts = {}) {
   let on = true
   let silent = false // classroom mode: the whisper goes to the students' phones, this device stays quiet
 
-  const clip = (p: string) => p.trim().slice(0, TTS_MAX_CHARS)
+  const clip = clipPhrase
   const unlock = () => { const c = getCtx(); if (c.state === 'suspended') void c.resume() }
 
   return {

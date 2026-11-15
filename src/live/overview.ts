@@ -15,4 +15,16 @@ export function topLevel(terms: Term[]): Term[] {
   const covers = (g: Term, t: Term) => g !== t && inside(t.box, g.box) && (!GROUP.test(t.phrase) || area(g.box) > area(t.box) || g.id < t.id)
   return readingOrder(terms.filter(t => !groups.some(g => covers(g, t))))
 }
-export const overview = (terms: Term[]): string[] => topLevel(terms).map(t => t.phrase)
+// Two or more top-level items of one kind are numbered ("equation 1: ...") so they can be told apart.
+export function overview(terms: Term[]): string[] {
+  const top = topLevel(terms)
+  const kind = (t: Term) => GROUP.exec(t.phrase)?.[1]
+  const count = (k: string) => top.filter(t => kind(t) === k).length
+  const seen: Record<string, number> = {}
+  return top.map(t => {
+    const k = kind(t)
+    if (!k || count(k) < 2) return t.phrase
+    seen[k] = (seen[k] ?? 0) + 1
+    return `${k} ${seen[k]}: ${t.phrase.replace(GROUP, '')}`
+  })
+}

@@ -56,8 +56,8 @@ describe('classroom (camera device side)', () => {
     const { classroom, last } = setup()
     await classroom.open('math201')
     last().on.onState?.('open')
-    const long = 'the equation: ' + 'x plus 1, '.repeat(24) + 'end' // 14 + 240 + 3 chars, over MAX_PHRASE
-    expect(long.length).toBeGreaterThan(200)
+    const long = 'the equation: ' + 'x plus 1, '.repeat(32) + 'end' // 14 + 320 + 3 chars, over MAX_PHRASE
+    expect(long.length).toBeGreaterThan(MAX_PHRASE)
     classroom.board([term(1, long, 0.1, 0.1), ...Array.from({ length: 100 }, (_, i) => term(i + 2, `t${i}`, 0.5, 0.2 + i * 0.001))])
     const b = last().sent.at(-1) as { phrases: string[]; overview: string[] }
     expect(b.phrases).toHaveLength(MAX_BOARD_PHRASES)
@@ -68,7 +68,7 @@ describe('classroom (camera device side)', () => {
     classroom.whisper(many)
     const w = last().sent.at(-1) as { items: { phrase: string }[] }
     expect(w.items).toHaveLength(MAX_ITEMS)
-    expect(w.items[0].phrase.length).toBe(MAX_PHRASE)
+    expect(w.items[0].phrase.length).toBeLessThanOrEqual(MAX_PHRASE)
     expect(parseCameraMsg(JSON.stringify(w))).not.toBeNull()
   })
 

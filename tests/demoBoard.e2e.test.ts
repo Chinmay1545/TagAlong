@@ -68,7 +68,7 @@ describe('the demo board, as the reader gives it', () => {
     for (const t of terms) expect(t.phrase).not.toMatch(/\bon (the )?(top|bottom)\b|top left|top right|in the middle/)
   })
   it('overview: the two equations, the left one first', () => {
-    expect(overview(terms)).toEqual([EXPECTED[26], EXPECTED[27]])
+    expect(overview(terms)).toEqual(['equation 1: ' + EXPECTED[26].slice(14), 'equation 2: ' + EXPECTED[27].slice(14)])
   })
 })
 

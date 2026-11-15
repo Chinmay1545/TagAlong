@@ -1,11 +1,12 @@
 import type { Resolution } from '../core/types'
+import { TTS_MAX_CHARS } from '../core/config'
 
 // Classroom relay: ONE camera device publishes into a room (one per course, e.g. "math201"), the server
 // fans out to every student phone in that room. One way only: students listen, nothing flows back.
 // Shared by the browser (camera + student pages) and the server (which validates every camera message).
 
 export const MAX_ROOM_LEN = 40
-export const MAX_PHRASE = 200 // same cap as TTS_MAX_CHARS: a phrase the student fetches audio for
+export const MAX_PHRASE = TTS_MAX_CHARS // a phrase the student fetches audio for, so one cap for both
 export const MAX_WORD = 20
 export const MAX_ITEMS = 8
 export const MAX_BOARD_PHRASES = 80
@@ -58,8 +59,15 @@ export function parseCameraMsg(raw: string): CameraMsg | null {
   }
 }
 
-// Clip the same way the server and TTS do (trim, then MAX_PHRASE), so one long equation cannot get a whole message dropped.
-export const clipPhrase = (p: string) => p.trim().slice(0, MAX_PHRASE)
+// THE clip: camera, server (remember / allowsPhrase) and TTS all use it, so a clipped phrase still matches.
+// Cuts at a word boundary (never mid-word); a single word longer than the cap is cut hard. Idempotent.
+export function clipPhrase(phrase: string): string {
+  const p = phrase.trim()
+  if (p.length <= MAX_PHRASE) return p
+  const cut = p.slice(0, MAX_PHRASE)
+  const at = /\s/.test(p[MAX_PHRASE]) ? MAX_PHRASE : cut.search(/\s\S*$/)
+  return (at > 0 ? cut.slice(0, at) : cut).trimEnd()
+}
 
 export function whisperFromResolution(r: Resolution): CameraMsg | null {
   if (!r.terms.length) return null
