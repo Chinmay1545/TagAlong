@@ -1,117 +1,69 @@
 # THIS & THAT
 
-A teacher points at a whiteboard and says "this"; the app whispers the pointed term to a blind student.
+Teachers point at the board and say "this cancels with that". A blind student hears only "this" and "that". They don't know what was pointed at.
 
-## Requirements
+THIS & THAT fixes that. A camera watches the board and the teacher's hand. When the teacher says "this" or "that", the student hears the exact term in their earbud, for example *"the x plus 3 on top"*.
 
-- Node 22.12 or newer
-- A webcam and microphone, and a modern Chromium-based browser
-- Optional: an Anthropic API key or AWS credentials (see below). Without them the app still runs on the saved demo board and the browser voice.
+## How it works
 
-## Setup
+1. **Reading the board.** When new writing appears and the board stays still for a second, Claude reads it and returns each term with its position. Boxes appear one by one as they are read.
+2. **Pointing.** The camera tracks the teacher's finger, a pointer stick or a laser dot, in the browser.
+3. **Listening.** Speech recognition picks up "this", "that", "these" and "those". Words like "top", "bottom" or "whole equation" pick a bigger part of the board.
+4. **Whispering.** The pointed term is spoken to the student. The voice comes from the left or right, depending on where the term is on the board. If the teacher says "this" without pointing, nothing plays.
+
+No AI runs while the teacher is pointing, so the whisper comes right away. AI is only used to read the board when it changes.
+
+## In a classroom
+
+One camera device sits at the front. Every blind student listens on their own phone.
+
+1. On the camera device, enter the course name (for example `math201`) and press **Open class**.
+2. Students scan the QR code or open the student link once, and can add it to their Home Screen. The link stays the same for that course.
+3. The student taps **Start listening**. Whispers play on their phone. **Repeat** and **What's on the board?** work on the phone too.
+4. **Close class** ends it for everyone.
+
+The phones only listen; nothing is sent back to the teacher. Each phrase is voiced once on the server and shared, so ten students cost the same as one.
+
+## Run it
+
+You need Node 22.12 or newer and a Chromium-based browser with a camera and microphone.
 
 ```bash
 npm install
-cp .env.example .env    # then fill in the values you have
+cp .env.example .env   # add the keys you have
+npm start              # opens at http://127.0.0.1:8787/
 ```
 
-### `.env` keys (server only, never sent to the browser)
+To try it without a camera or any keys, open `http://127.0.0.1:8787/?demo=1`. Move the mouse over the board photo and press `P` to point.
 
-| Key | Purpose |
+### Keys (in `.env`, server only)
+
+| Key | What it turns on |
 |---|---|
-| `AWS_REGION` | Enables Polly voice and Transcribe speech (for example `us-east-1`) |
-| `AWS_ACCESS_KEY_ID` | AWS credentials |
-| `AWS_SECRET_ACCESS_KEY` | AWS credentials |
-| `MODEL_PROVIDER` | Optional `bedrock` or `anthropic`. `bedrock` forces Bedrock for the board and notes. Default: Anthropic if `ANTHROPIC_API_KEY` is set, else Bedrock |
-| `BOARD_MODEL_ID` | Bedrock vision model or inference profile that reads the board |
-| `NOTES_MODEL_ID` | Optional Bedrock model for notes (default `us.amazon.nova-micro-v1:0`) |
-| `TRANSCRIBE_VOCABULARY` | Optional name of an existing Transcribe custom vocabulary (see below) |
-| `NOTES_BUCKET` | Optional existing S3 bucket. Enables the "Copy share link" button (24 hour link, `notes/<uuid>.txt`) |
-| `ANTHROPIC_API_KEY` | Optional. If set, the board is read through the Anthropic API instead of Bedrock, and notes are enabled |
-| `ANTHROPIC_MODEL_ID` | Optional model override for board reads |
-| `ANTHROPIC_BOARD_EFFORT` | Optional thinking effort for board reads: `low` (default, fastest), `medium`, `high`, `xhigh`, `max` |
-| `ANTHROPIC_BOARD_SPEED` | Optional `fast` (default: fast mode, about 2x the price per token, much quicker first box) or `standard`. A rate-limited fast read retries once at standard speed |
-| `ANTHROPIC_NOTES_MODEL_ID` | Optional model override for notes |
-| `POLLY_VOICE`, `POLLY_ENGINE` | Optional Polly voice and engine (`generative` or `neural`) |
+| `ANTHROPIC_API_KEY` | Reading the board with Claude, and class notes |
+| `ELEVENLABS_API_KEY` | The natural whisper voice |
+| `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Amazon Transcribe speech recognition and the Polly backup voice |
+| `ACCESS_KEY` | Required when hosted publicly. Open the app once with `?key=<ACCESS_KEY>` |
 
-The presigned share URL contains your AWS access key ID (not the secret). Use a dedicated IAM user's static keys, not root or temporary credentials: temporary credentials make the link expire early.
+With no keys, the app falls back to the browser's own voice and speech recognition. See [.env.example](.env.example) for the optional settings.
 
-`GET /api/health` also reports `share` and `provider` (which provider serves the board and notes). It reports which of these are present (never their values), and the app shows a dismissible strip at the top when something is missing.
-
-### AWS check and Transcribe vocabulary
-
-`npm run aws:check` makes tiny calls to STS, Polly, Bedrock (board and notes models) and Transcribe, then prints a table with the next step for each failure. It always exits 0. The app never creates AWS resources; create the vocabulary once yourself:
-
-```
-aws transcribe create-vocabulary --vocabulary-name this-and-that-math --language-code en-US \
-  --phrases this that cancels squared cubed numerator denominator fraction over plus minus times equals x y
-```
-
-(The same words are in `scripts/math-vocabulary.txt`.) Wait until `aws transcribe get-vocabulary --vocabulary-name this-and-that-math` says `READY`, then set `TRANSCRIBE_VOCABULARY=this-and-that-math`.
-
-## Run
-
-| Command | What it does |
-|---|---|
-| `npm start` | One command: builds the frontend, then serves it and the API from one process at `http://127.0.0.1:8787/` |
-| `npm run dev` | Vite dev server on `http://localhost:5173/` (proxies `/api` and `/ws` to the server) |
-| `npm run server` | API server with reload on `127.0.0.1:8787`. Run alongside `npm run dev` |
-| `npm test` | Test suite |
-| `npx tsc --noEmit` | Type check |
-| `npm run demo:check` | Scripted check against a running dev server |
-| `node scripts/bench-board.mjs [folder]` | Replays JPEGs (default `public/fixtures`) against `/api/read-board` and prints time to first term and total time per read. Needs a running server with a board model configured |
-
-URL options:
-
-- `?demo=1` shows the saved board photo with its saved boxes and opens the transcript panel. No camera board reads or AWS needed. Move the mouse over the photo to point at a term, then press `P`.
-- `?fixture=1` same saved photo and boxes, transcript panel closed.
-- Without these (live mode) the stage shows the camera and only boxes read from it.
-- `?mirror=1` mirrors the camera preview (off by default, because the camera faces the board).
-
-## Classroom: one camera, many student phones
-
-1. On the camera device (laptop or phone on a tripod, facing the board), type the course name (`a-z`, `0-9`, `-`, for example `math201`) and press **Open class**. This device goes quiet; the whispers go to the students.
-2. Give each student the **student link** (Copy link). It never changes for that course, so it can be saved to the Home Screen once. Changing `ACCESS_KEY` revokes every link.
-3. The student opens the link and taps **Start listening** once (phones block sound until a tap). Whispers play on their phone, left or right by where the term is on the board. **Repeat** and **What's on the board?** work on the phone; nothing is sent back to the teacher.
-4. The camera shows how many are listening. **Close class** tells the students it ended.
-
-The server only relays text (`/ws/room`); each phrase is voiced once by `/api/tts` and cached, so ten students cost one voice request. A student's room token opens the voice for phrases published in that room and nothing else. Plain `/?student` is still the same-device student tab.
-
-## Keyboard
+### Keyboard (camera device)
 
 | Key | Action |
 |---|---|
-| `P` | Point |
-| `Y` | Mark the newest resolution correct |
-| `N` | Mark the newest resolution wrong |
-| `W` | Toggle "with / without app" |
+| `P` | Point (acts as if the teacher said "this") |
+| `F` | Freeze the boxes on the board |
+| `W` | Switch between with and without the app |
+| `Y` / `N` | Mark the last whisper right or wrong |
 
-## Demo script
+### Development
 
-1. Say: "A blind student hears 'this' and 'that' and nothing else."
-2. The judge puts in one earbud and closes their eyes. Play it without the app first (press `W`).
-3. App on. A teammate writes a fraction, points, and says "this cancels with that". The judge hears the terms.
-4. The teammate says "so this is my favorite part" with no pointing. Nothing plays: the gate is working.
-5. The judge opens their eyes. The screen shows boxes, the fingertip, the resolved words, and a measured number (for example "correct term 46 of 50").
-6. Ask "what's on the board?": every term is whispered in reading order.
-7. Show the student view on the second screen. Click "Open student view": it opens in its own window. Keep the judge window visible, because a hidden window stops hand tracking.
-8. Show the Notes (Said vs Meant) and the professor report card.
-9. Close: "Past work needed gloves and raised prints. Ours needs a camera and a browser."
-
-## Board reading
-
-The board is checked for changes every second. Once the picture has stayed still for a second (pen lifted, nobody's hand in view) the frame is sent to the board reader. The model replies with one short line per term (`latex|x|y|w|h`) and the server streams each term to the browser as soon as its line is written, so boxes appear one by one. The spoken phrase ("the x plus 3 on top") is built in code from the LaTeX and the box position. A term that is read again in nearly the same place keeps its box, so a wobbly camera does not redraw everything. If the teacher says "this" at something just written before its box exists, the word is held and whispered when the box arrives (or dropped silently after a few seconds).
-
-## Troubleshooting
-
-- **Camera denied**: allow camera access for the page in the browser's site settings, then reload. Use `?demo=1` to run without a camera board.
-- **Microphone denied**: allow microphone access and reload. Without it there is no speech, so pointing alone will not trigger a whisper.
-- **Transcribe not subscribed or not configured**: the app falls back to the browser's Web Speech recognition automatically. The status line shows which one is active.
-- **Voice sounds robotic**: Polly is not configured, so the browser voice is in use. Set `AWS_REGION` and credentials.
-- **Board never reads**: set `BOARD_MODEL_ID` (Bedrock) or `ANTHROPIC_API_KEY`. Otherwise only the saved demo board is available.
-- **Student view shows "nothing in reach" every time**: the judge window is minimised or covered, so tracking paused. Keep it visible.
-- **Port 8787 in use**: stop the other server; the port is fixed.
+| Command | What it does |
+|---|---|
+| `npm run dev` + `npm run server` | Dev server at `http://localhost:5173/`, with live reload |
+| `npm test` | Tests |
+| `npx tsc --noEmit` | Type check |
 
 ## Privacy
 
-Camera frames are sent to the board reader only when the board changes (never while a hand is in frame). Nothing is stored. Keys stay on the server, and the server listens on `127.0.0.1` only.
+The camera image is sent to the board reader only when the board changes, and never while a hand is in view. Nothing is stored. Keys stay on the server.

@@ -9,3 +9,4 @@ public/models/README.txt
 public/fixtures/PUT_BOARD_PHOTO_HERE.txt
 *.txt
 !README.md
+.claude/
