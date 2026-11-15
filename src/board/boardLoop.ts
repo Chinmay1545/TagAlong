@@ -35,9 +35,10 @@ export type BoardLoop = { stop(): void; reset(): void; pendingRegion(): Box | nu
 
 const GROUP = /^the (top|bottom|fraction|left side|right side|equation|brackets): /
 const inside = (b: Box, x: number, y: number) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h
-// New ink: a single term whose centre lies outside every box already shown.
+// New ink: a single term whose centre lies outside every single-term box already shown (a group's box
+// does not hide small ink written inside it, like a minus sign or an exponent).
 const foundNewInk = (shown: Term[], read: Term[]): boolean =>
-  read.some(t => !GROUP.test(t.phrase) && !shown.some(o => inside(o.box, t.box.x + t.box.w / 2, t.box.y + t.box.h / 2)))
+  read.some(t => !GROUP.test(t.phrase) && !shown.some(o => !GROUP.test(o.phrase) && inside(o.box, t.box.x + t.box.w / 2, t.box.y + t.box.h / 2)))
 
 const FULL: Box = { x: 0, y: 0, w: 1, h: 1 }
 
@@ -112,8 +113,8 @@ export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms
         if (!live()) return
         emptyReads = terms.length ? 0 : emptyReads + 1
         if (emptyReads > 0 && emptyReads < EMPTY_READS_TO_CLEAR) { confirm = true; return } // re-read on the next settled check to confirm
+        if (idleOnly && terms.length && !foundNewInk(before, terms)) return // keeps the old baseline: the ink it skipped can still count as a change
         lastRead = gray
-        if (idleOnly && terms.length && !foundNewInk(before, terms)) return
         show(mergeTerms(before, terms, { dropMissing: true })) // same term, same box: no re-drawn boxes on a wobble
       } catch (e) {
         if (!live()) return

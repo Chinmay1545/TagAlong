@@ -95,3 +95,14 @@ describe('one clip', () => {
     expect(b.overview.length).toBeGreaterThan(0)
   })
 })
+
+describe('numbered container', () => {
+  it('only an equation or a fraction is numbered; side groups are not', () => {
+    const out = uniquePhrases([
+      t(1, 'the left side: y', 0.1, 0.1, 0.3, 0.2), t(2, 'the left side: y', 0.1, 0.6, 0.3, 0.2),
+      t(3, 'y', 0.15, 0.15, 0.05, 0.05), t(4, 'y', 0.15, 0.65, 0.05, 0.05),
+    ])
+    expect(out.some(x => x.phrase.includes('in left side'))).toBe(false)
+    expect(new Set(out.map(x => x.phrase)).size).toBe(4)
+  })
+})

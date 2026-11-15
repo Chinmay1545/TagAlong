@@ -668,6 +668,29 @@ describe('idle re-read of an unchanged board', () => {
     expect(h.shown.at(-1)!.map(t => t.latex).sort()).toEqual(['2x', '7'])
     h.stop()
   })
+  it('a new single term inside a group box but outside every single-term box is applied', async () => {
+    const h = harness()
+    const inGroup: Term = { id: 5, latex: '-', phrase: 'the minus', box: { x: 0.35, y: 0.35, w: 0.05, h: 0.05 } }
+    h.replies.push([...fraction, group], [...fraction, group, inGroup])
+    await h.tick()
+    await idle()
+    expect(h.shown.at(-1)!.map(t => t.latex)).toContain('-')
+    h.stop()
+  })
+  it('an ignored idle read keeps the old baseline, so a later real change is still read', async () => {
+    const h = harness()
+    const paint = (n: number) => { h.cam.paint = d => { for (let i = 0; i < n; i++) d.fill(250, i * 4, i * 4 + 4) } }
+    h.replies.push(fraction, fraction, [fraction[0]])
+    await h.tick()
+    paint(3) // below the change threshold (4 cells): only the idle read looks at it
+    await idle()
+    expect(h.reads()).toBe(2)
+    paint(6) // 3 more cells: 6 against the first read, but only 3 against a drifted baseline
+    await h.tick()
+    expect(h.reads()).toBe(3)
+    expect(h.shown.at(-1)!.length).toBe(1)
+    h.stop()
+  })
   it('a read of a changed frame with fewer terms still drops', async () => {
     const h = harness()
     h.replies.push(fraction, [fraction[0]])

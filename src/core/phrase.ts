@@ -141,7 +141,7 @@ export function uniquePhrases<T extends { phrase: string; box: Box }>(input: T[]
       return j < 0 ? null : `, in the brackets ${base[j].replace(GROUP_HEAD, '')}`
     },
     i => { // the equation or fraction it belongs to, numbered in reading order among those of its kind
-      const j = smallestAround(i, k => tops.includes(k))
+      const j = smallestAround(i, k => tops.includes(k) && (kinds[k] === 'equation' || kinds[k] === 'fraction'))
       if (j < 0) return null
       const same = readingOrder(tops.filter(k => kinds[k] === kinds[j]).map(k => terms[k]))
       return same.length < 2 ? null : `, in ${kinds[j]} ${same.indexOf(terms[j]) + 1}`
