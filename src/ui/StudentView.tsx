@@ -47,7 +47,7 @@ export function StudentView() {
   return (
     <main className="student">
       <header className="s-head mono">
-        <span><span className="dot" aria-hidden="true" />THIS &amp; THAT</span>
+        <span><span className="dot" aria-hidden="true" />TagAlong</span>
         <span>{withoutApp ? 'without app' : 'with app'}</span>
       </header>
       <section className="s-stage">

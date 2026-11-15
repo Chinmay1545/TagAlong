@@ -138,7 +138,7 @@ import { startInput } from '../server/transcribe'
 describe('startInput vocabulary', () => {
   const audio = (async function* () {})()
   it('passes VocabularyName only when TRANSCRIBE_VOCABULARY is set', () => {
-    expect(startInput(audio, { TRANSCRIBE_VOCABULARY: 'this-and-that-math' }).VocabularyName).toBe('this-and-that-math')
+    expect(startInput(audio, { TRANSCRIBE_VOCABULARY: 'tagalong-math' }).VocabularyName).toBe('tagalong-math')
     expect(startInput(audio, {})).not.toHaveProperty('VocabularyName')
   })
 })

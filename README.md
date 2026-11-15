@@ -1,8 +1,8 @@
-# THIS & THAT
+# TagAlong
 
 Teachers point at the board and say "this cancels with that". A blind student hears only "this" and "that". They don't know what was pointed at.
 
-THIS & THAT fixes that. A camera watches the board and the teacher's hand. When the teacher says "this" or "that", the student hears the exact term in their earbud, for example *"the x plus 3 on top"*.
+TagAlong fixes that. A camera watches the board and the teacher's hand. When the teacher says "this" or "that", the student hears the exact term in their earbud, for example *"the x plus 3 on top"*.
 
 ## How it works
 
