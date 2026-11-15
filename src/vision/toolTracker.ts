@@ -16,7 +16,7 @@ export function startToolTracker(
   video: HTMLVideoElement,
   onPoint: (p: PointerPoint) => void,
   getHand: () => HandInfo | null = () => null,
-  tools: Tools = { laser: true, stick: true },
+  tools: Pick<Tools, 'laser' | 'stick'> = { laser: true, stick: true },
 ): () => void {
   if (!tools.laser && !tools.stick) return () => {}
   const canvas = document.createElement('canvas')

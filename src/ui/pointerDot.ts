@@ -1,7 +1,7 @@
 import { pointerLabel, type PointerKind, type PointerPoint } from '../vision/pointer'
 
 // Dot colour per kind, so the judge can see at a glance what the app thinks is pointing.
-const FILL: Record<PointerKind, string> = { finger: '#fafafa', stick: '#fbbf24', laser: '#f87171', mouse: '#93c5fd' }
+const FILL: Record<PointerKind, string> = { finger: '#fafafa', palm: '#fafafa', stick: '#fbbf24', laser: '#f87171', mouse: '#93c5fd' }
 const INK = '#09090b'
 const CHIP = 'rgba(9,9,11,0.78)'
 
@@ -13,8 +13,8 @@ export function drawPointerDot(ctx: CanvasRenderingContext2D, p: PointerPoint, W
   ctx.strokeStyle = INK
   ctx.lineWidth = 2
   ctx.beginPath()
-  ctx.arc(x, y, 6, 0, Math.PI * 2)
-  ctx.fill()
+  ctx.arc(x, y, p.kind === 'palm' ? 14 : 6, 0, Math.PI * 2) // an open hand is drawn as a larger ring
+  if (p.kind !== 'palm') ctx.fill()
   ctx.stroke()
 
   const text = pointerLabel(p.kind)

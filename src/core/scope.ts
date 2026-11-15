@@ -56,3 +56,14 @@ export function groupFor(terms: Term[], aim: { x: number; y: number }, scope: st
   const inside = terms.filter(t => groupKind(t.phrase) === scope && grow(frac, { x: t.box.x + t.box.w / 2, y: t.box.y + t.box.h / 2 }, 0))
   return smallest(inside)
 }
+
+// Open hand without a scope word: the top-level group (a box inside no other group) the aim is on, grown by
+// maxDist. Two qualify: the one whose box centre is nearest the aim. None: null (the caller reads a single term).
+export function topGroupAt(terms: Term[], aim: { x: number; y: number }, maxDist = MAX_DIST): Term | null {
+  const groups = terms.filter(t => groupKind(t.phrase))
+  const inside = (a: Term, b: Term) =>
+    area(a) < area(b) && a.box.x >= b.box.x && a.box.y >= b.box.y && a.box.x + a.box.w <= b.box.x + b.box.w && a.box.y + a.box.h <= b.box.y + b.box.h
+  const near = groups.filter(g => grow(g, aim, maxDist) && !groups.some(o => inside(g, o)))
+  const d = (g: Term) => Math.hypot(g.box.x + g.box.w / 2 - aim.x, g.box.y + g.box.h / 2 - aim.y)
+  return near.reduce<Term | null>((b, g) => (!b || d(g) < d(b) ? g : b), null)
+}

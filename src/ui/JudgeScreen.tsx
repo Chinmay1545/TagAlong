@@ -8,7 +8,7 @@ import { keepScreenAwake } from '../vision/wakeLock'
 import { startHandTracker } from '../vision/handTracker'
 import { startToolTracker } from '../vision/toolTracker'
 import type { HandInfo } from '../vision/stick'
-import { pointersLabel, toolsFor } from '../vision/tools'
+import { openRatioFor, pointersLabel, toolsFor } from '../vision/tools'
 import { loadFixture } from '../board/boardClient'
 import { boardMode, stageFor } from '../board/mode'
 import { activePointer, kindOf } from '../vision/pointer'
@@ -168,6 +168,8 @@ export function JudgeScreen() {
   const [locked, setLocked] = useState(false) // board frozen: boxes stay as they are
   const [reading, setReading] = useState(false) // a board read is in flight
   const [camError, setCamError] = useState<string | null>(null)
+  const [handOn, setHandOn] = useState(tools.hand)
+  const handOnRef = useRef(tools.hand) // the hand tracker reads this every frame
   const [speech, setSpeech] = useState<Speech>('off')
   const [whisperOn, setWhisperOn] = useState(true)
   const [medianMs, setMedianMs] = useState<number | null>(null)
@@ -252,9 +254,9 @@ export function JudgeScreen() {
           return
         }
         let hand: HandInfo | null = null
-        const stop = await startHandTracker(video, s => tipsRef.current.push(s), h => { hand = h })
+        const stop = await startHandTracker(video, s => tipsRef.current.push(s), h => { hand = h }, openRatioFor(location.search), () => handOnRef.current)
         if (cancelled) { stop(); return }
-        const stopTools = startToolTracker(video, p => tipsRef.current.push(p), () => hand, tools) // laser dot and stick tip, if switched on
+        const stopTools = startToolTracker(video, p => tipsRef.current.push(p), () => hand, { laser: tools.laser, stick: tools.stick }) // laser dot and stick tip, if switched on
         stopTracker = () => { stop(); stopTools() }
         if (stage.boardLoop) boardLoopRef.current = startBoardLoop(video, tipsRef.current, setTerms)
       } catch (e) {
@@ -393,6 +395,7 @@ export function JudgeScreen() {
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
       const k = e.key.toLowerCase()
       if (k === 'w') { toggleWhisperRef.current(); return }
+      if (k === 'h') { handOnRef.current = !handOnRef.current; setHandOn(handOnRef.current); return } // open-hand gesture on/off
       if (k === 'f') { // freeze the boxes for the demo; pointing, speech and whispers keep working
         const loop = boardLoopRef.current
         if (loop) { loop.lock(!loop.locked()); setLocked(loop.locked()) }
@@ -492,7 +495,7 @@ export function JudgeScreen() {
       <div className="grain" aria-hidden="true" />
       <header className="masthead rise" style={step(0)}>
         <div className="wordmark"><span className="dot" aria-hidden="true" />THIS &amp; THAT</div>
-        <div className="status mono">board · {boardAgo}<span className="status-gap" />speech · {speechLabel}<span className="status-gap" />pointers · {pointersLabel(tools, !!stage.photo)}<span className="status-gap" /><a className="student-link" href="/?student=1" target="student" onClick={e => { e.preventDefault(); window.open('/?student=1', 'student', 'popup,width=1280,height=800') }} title="Opens in its own window; keep this window visible so hand tracking keeps running">Open student view</a></div>
+        <div className="status mono">board · {boardAgo}<span className="status-gap" />speech · {speechLabel}<span className="status-gap" />pointers · {pointersLabel({ ...tools, hand: handOn }, !!stage.photo)}<span className="status-gap" /><a className="student-link" href="/?student=1" target="student" onClick={e => { e.preventDefault(); window.open('/?student=1', 'student', 'popup,width=1280,height=800') }} title="Opens in its own window; keep this window visible so hand tracking keeps running">Open student view</a></div>
         <ClassPanel classroom={classRef.current} onLiveChange={live => playerRef.current.setSilent(live)} />
       </header>
       <Readiness />
@@ -515,6 +518,7 @@ export function JudgeScreen() {
           <span><kbd>N</kbd> wrong</span>
           <span><kbd>W</kbd> with / without app</span>
           <span><kbd>F</kbd> lock board</span>
+          <span><kbd>H</kbd> open hand</span>
         </div>
         {camError && <div className="cam-error" role="alert">{camError}</div>}
       </section>
