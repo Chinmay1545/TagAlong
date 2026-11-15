@@ -1,4 +1,4 @@
-import { groupKind } from './scope'
+import { GROUP, groupKind } from './scope'
 import { readingOrder } from '../live/boardQuery'
 import { speakMath } from './speakMath'
 import type { Box } from './types'
@@ -50,12 +50,12 @@ export function positionWords(b: Box): string {
 }
 
 const PLACE: Record<string, string> = {
-  top: 'in the top', bottom: 'in the bottom', power: 'in the power',
-  left: 'on the left side', right: 'on the right side', bracket: 'in the brackets',
+  top: 'top of the fraction', bottom: 'bottom of the fraction', power: 'in the power',
+  left: 'left side of the equation', right: 'right side of the equation', bracket: 'in the brackets',
 }
 const KIND: Record<string, string> = {
-  numerator: 'top', denominator: 'bottom', fraction: 'fraction', lhs: 'left side',
-  rhs: 'right side', equation: 'equation', group: 'brackets',
+  numerator: 'top of the fraction', denominator: 'bottom of the fraction', fraction: 'fraction', lhs: 'left side of the equation',
+  rhs: 'right side of the equation', equation: 'equation', group: 'brackets',
 }
 
 // Spoken math + where it lives in the MATH (never where it sits on screen). `_box` is kept for callers.
@@ -99,7 +99,7 @@ export function tidyTerms<T extends { phrase: string; box: Box }>(terms: T[]): T
     const k = groupKind(t.phrase)
     if (k !== 'top' && k !== 'bottom') return t
     const nested = terms.some(o => o !== t && groupKind(o.phrase) === k && inside(t.box, o.box) && area(o.box) > area(t.box))
-    return nested ? { ...t, phrase: t.phrase.replace(/^the (top|bottom): /, 'the brackets: ') } : t
+    return nested ? { ...t, phrase: t.phrase.replace(GROUP, 'the brackets: ') } : t
   })
   return renamed.filter((t, i) => !renamed.slice(0, i).some(o => norm(o.phrase) === norm(t.phrase) && sameBox(o.box, t.box)))
 }
@@ -107,7 +107,7 @@ export function tidyTerms<T extends { phrase: string; box: Box }>(terms: T[]): T
 const original = new WeakMap<object, string>()
 const originalOf = (t: { phrase: string }) => original.get(t) ?? t.phrase
 
-const SIDE_PLACE: Record<string, string> = { top: 'in the top', bottom: 'in the bottom', 'left side': 'on the left side', 'right side': 'on the right side' }
+const SIDE_PLACE: Record<string, string> = { top: 'top of the fraction', bottom: 'bottom of the fraction', 'left side': 'left side of the equation', 'right side': 'right side of the equation' }
 
 export function uniquePhrases<T extends { phrase: string; box: Box }>(input: T[]): T[] {
   // Work from original phrases, so the result does not depend on an earlier call's renames.

@@ -47,17 +47,17 @@ const by = (phrase: string, nth = 0) => terms.filter(t => t.phrase === phrase)[n
 const mid = (t: Term) => ({ x: t.box.x + t.box.w / 2, y: t.box.y + t.box.h / 2 })
 
 const EXPECTED = [
-  'x squared, in the top', '9, in the top', 'x squared, in the bottom', '5x, in the bottom', '6, in the bottom',
-  'x minus 3, in the top', 'x plus 3, in the top', 'x plus 2, in the bottom', 'x plus 3, in the bottom',
-  '3, on the left side', 'x, in the brackets', '4, in the brackets', '5, on the left side', '2x, on the right side', '9, on the right side',
-  'the top: x squared minus 9', 'the bottom: x squared plus 5x plus 6',
-  'the top: the quantity x minus 3, times the quantity x plus 3', 'the bottom: the quantity x plus 2, times the quantity x plus 3',
+  'x squared, top of the fraction', '9, top of the fraction', 'x squared, bottom of the fraction', '5x, bottom of the fraction', '6, bottom of the fraction',
+  'x minus 3, top of the fraction', 'x plus 3, top of the fraction', 'x plus 2, bottom of the fraction', 'x plus 3, bottom of the fraction',
+  '3, left side of the equation', 'x, in the brackets', '4, in the brackets', '5, left side of the equation', '2x, right side of the equation', '9, right side of the equation',
+  'the top of the fraction: x squared minus 9', 'the bottom of the fraction: x squared plus 5x plus 6',
+  'the top of the fraction: the quantity x minus 3, times the quantity x plus 3', 'the bottom of the fraction: the quantity x plus 2, times the quantity x plus 3',
   'the fraction: x squared minus 9, over x squared plus 5x plus 6',
   'the fraction: the quantity x minus 3, times the quantity x plus 3, over the quantity x plus 2, times the quantity x plus 3',
   'the brackets: x minus 4',
-  'the left side: x squared minus 9, over x squared plus 5x plus 6',
-  'the right side: the quantity x minus 3, times the quantity x plus 3, over the quantity x plus 2, times the quantity x plus 3',
-  'the left side: 3 times the quantity x minus 4, plus 5', 'the right side: 2x plus 9',
+  'the left side of the equation: x squared minus 9, over x squared plus 5x plus 6',
+  'the right side of the equation: the quantity x minus 3, times the quantity x plus 3, over the quantity x plus 2, times the quantity x plus 3',
+  'the left side of the equation: 3 times the quantity x minus 4, plus 5', 'the right side of the equation: 2x plus 9',
   'the equation: x squared minus 9, over x squared plus 5x plus 6, equals the quantity x minus 3, times the quantity x plus 3, over the quantity x plus 2, times the quantity x plus 3',
   'the equation: 3 times the quantity x minus 4, plus 5 equals 2x plus 9',
 ]
@@ -108,7 +108,7 @@ function session(points: AnyPoint[]) {
   }
 }
 const at = (t: Term) => mid(t)
-const topB = () => at(by('x plus 3, in the top')), botB = () => at(by('x plus 3, in the bottom'))
+const topB = () => at(by('x plus 3, top of the fraction')), botB = () => at(by('x plus 3, bottom of the fraction'))
 
 describe('the six demo moments, through the real pointing code', () => {
   it('0. whisper off: "this cancels with that" at both (x+3) plays nothing', () => {
@@ -122,29 +122,29 @@ describe('the six demo moments, through the real pointing code', () => {
     const s = session(inOrder(rest('finger', topB().x, topB().y, 0, 1300), move('finger', topB(), botB(), 1333, 1500), rest('finger', botB().x, botB().y, 1533, 3000)))
     s.say([['this', 500], ['cancels', 700], ['with', 950], ['that', 2000]])
     s.run(4000)
-    expect(s.played).toEqual(['x plus 3, in the top', 'x plus 3, in the bottom'])
+    expect(s.played).toEqual(['x plus 3, top of the fraction', 'x plus 3, bottom of the fraction'])
   })
   it('2. a hand sweeping across the left top with "this whole top part"', () => {
     const s = session(move('finger', { x: 0.05, y: 0.335 }, { x: 0.19, y: 0.335 }, 300, 700))
     s.say([['this', 500], ['whole', 620], ['top', 740], ['part', 860]])
     s.run(3000)
-    expect(s.played).toEqual(['the top: x squared minus 9'])
+    expect(s.played).toEqual(['the top of the fraction: x squared minus 9'])
   })
   it('3. rest on the 3 "this", then on the bracket "this bracket"', () => {
-    const three = at(by('3, on the left side')), paren = { x: 0.592, y: 0.375 }
+    const three = at(by('3, left side of the equation')), paren = { x: 0.592, y: 0.375 }
     const s = session(inOrder(rest('finger', three.x, three.y, 0, 1300), move('finger', three, paren, 1333, 1500), rest('finger', paren.x, paren.y, 1533, 3000)))
     s.say([['this', 500]])
     s.say([['this', 2000], ['bracket', 2120]])
     s.run(4000)
-    expect(s.played).toEqual(['3, on the left side', 'the brackets: x minus 4'])
+    expect(s.played).toEqual(['3, left side of the equation', 'the brackets: x minus 4'])
   })
-  it('4. rest on the 5 "this", then on the right side "that side"', () => {
-    const five = at(by('5, on the left side')), gap = { x: 0.905, y: 0.375 }
+  it('4. rest on the 5 "this", then right side of the equation "that side"', () => {
+    const five = at(by('5, left side of the equation')), gap = { x: 0.905, y: 0.375 }
     const s = session(inOrder(rest('finger', five.x, five.y, 0, 1300), move('finger', five, gap, 1333, 1500), rest('finger', gap.x, gap.y, 1533, 3000)))
     s.say([['this', 500]])
     s.say([['that', 2000], ['side', 2120]])
     s.run(4000)
-    expect(s.played).toEqual(['5, on the left side', 'the right side: 2x plus 9'])
+    expect(s.played).toEqual(['5, left side of the equation', 'the right side of the equation: 2x plus 9'])
   })
   it('5. no pointing, "this is my favourite part": nothing', () => {
     const s = session([])
@@ -165,16 +165,16 @@ describe('edge cases', () => {
     const s = session(inOrder(rest('finger', topB().x, topB().y, 0, 800), move('finger', topB(), { x: 0.95, y: 0.95 }, 833, 1300)))
     s.sayLate('this', 1300)
     s.run(2500)
-    expect(s.played).toEqual(['x plus 3, in the top'])
+    expect(s.played).toEqual(['x plus 3, top of the fraction'])
   })
   it('"this" said while the finger is still moving, then it rests within the recheck window', () => {
     const s = session(inOrder(move('finger', { x: 0.9, y: 0.9 }, topB(), 500, 930), rest('finger', topB().x, topB().y, 950, 2000)))
     s.say([['this', 1000], ['is', 1100], ['it', 1200]])
     s.run(3000)
-    expect(s.played).toEqual(['x plus 3, in the top'])
+    expect(s.played).toEqual(['x plus 3, top of the fraction'])
   })
   it('a finger halfway between the two top brackets (x-3) and (x+3) says nothing', () => {
-    const a = by('x minus 3, in the top').box, b = by('x plus 3, in the top').box
+    const a = by('x minus 3, top of the fraction').box, b = by('x plus 3, top of the fraction').box
     const gap = { x: (a.x + a.w + b.x) / 2, y: a.y + a.h / 2 }
     const s = session(rest('finger', gap.x, gap.y, 0, 2000))
     s.say([['this', 500]])
@@ -185,12 +185,12 @@ describe('edge cases', () => {
     const s = session(rest('finger', topB().x, topB().y, 0, 2000))
     s.say([['this', 500], ['is', 620], ['all', 740], ['about', 860]])
     s.run(3000)
-    expect(s.played).toEqual(['x plus 3, in the top'])
+    expect(s.played).toEqual(['x plus 3, top of the fraction'])
   })
   it('a later sentence\'s "top" more than 800 ms after "this": the plain term', () => {
     const s = session(rest('finger', topB().x, topB().y, 0, 3000))
     s.say([['this', 500], ['is', 700], ['true', 900], ['top', 1700]], 1300) // all arrive together, after the last word
     s.run(4000)
-    expect(s.played).toEqual(['x plus 3, in the top'])
+    expect(s.played).toEqual(['x plus 3, top of the fraction'])
   })
 })

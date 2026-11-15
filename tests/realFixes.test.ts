@@ -10,17 +10,17 @@ import type { Term } from '../src/core/types'
 const t = (id: number, phrase: string, x: number, y: number, w: number, h: number): Term => ({ id, latex: phrase, phrase, box: { x, y, w, h } })
 
 describe('tidyTerms', () => {
-  const big = t(1, 'the top: a times b', 0.1, 0.1, 0.5, 0.2)
+  const big = t(1, 'the top of the fraction: a times b', 0.1, 0.1, 0.5, 0.2)
   it('a top inside a larger top becomes the brackets, keeping id, box and latex', () => {
-    const inner = t(2, 'the top: a', 0.1, 0.1, 0.2, 0.2)
+    const inner = t(2, 'the top of the fraction: a', 0.1, 0.1, 0.2, 0.2)
     const out = tidyTerms([big, inner])
     expect(out[1]).toEqual({ ...inner, phrase: 'the brackets: a' })
     expect(out[0]).toBe(big)
   })
   it('a bottom inside a top stays, and it is idempotent', () => {
-    const b = t(2, 'the bottom: a', 0.1, 0.1, 0.2, 0.2)
+    const b = t(2, 'the bottom of the fraction: a', 0.1, 0.1, 0.2, 0.2)
     expect(tidyTerms([big, b])[1]).toBe(b)
-    const once = tidyTerms([big, t(2, 'the top: a', 0.1, 0.1, 0.2, 0.2)])
+    const once = tidyTerms([big, t(2, 'the top of the fraction: a', 0.1, 0.1, 0.2, 0.2)])
     expect(tidyTerms(once).map(x => x.phrase)).toEqual(once.map(x => x.phrase))
   })
   it('drops an exact twin (same phrase, same box)', () => {
@@ -29,19 +29,19 @@ describe('tidyTerms', () => {
 })
 
 describe('uniquePhrases tells equal phrases apart by the math', () => {
-  it('in the top / in the bottom', () => {
+  it('top of the fraction / bottom of the fraction', () => {
     const out = uniquePhrases([
-      t(1, 'the top: p', 0.1, 0.1, 0.5, 0.2), t(2, 'the bottom: q', 0.1, 0.6, 0.5, 0.2),
+      t(1, 'the top of the fraction: p', 0.1, 0.1, 0.5, 0.2), t(2, 'the bottom of the fraction: q', 0.1, 0.6, 0.5, 0.2),
       t(3, 'the brackets: x plus 3', 0.2, 0.1, 0.1, 0.2), t(4, 'the brackets: x plus 3', 0.2, 0.6, 0.1, 0.2),
     ])
-    expect(out.slice(2).map(x => x.phrase)).toEqual(['the brackets: x plus 3, in the top', 'the brackets: x plus 3, in the bottom'])
+    expect(out.slice(2).map(x => x.phrase)).toEqual(['the brackets: x plus 3, top of the fraction', 'the brackets: x plus 3, bottom of the fraction'])
   })
   it('equation numbers when no side group contains them', () => {
     const out = uniquePhrases([
       t(1, 'the equation: a equals 0', 0.1, 0.1, 0.5, 0.1), t(2, 'the equation: b equals 0', 0.1, 0.5, 0.5, 0.1),
-      t(3, '0, on the right side', 0.5, 0.1, 0.05, 0.1), t(4, '0, on the right side', 0.5, 0.5, 0.05, 0.1),
+      t(3, '0, right side of the equation', 0.5, 0.1, 0.05, 0.1), t(4, '0, right side of the equation', 0.5, 0.5, 0.05, 0.1),
     ])
-    expect(out.slice(2).map(x => x.phrase)).toEqual(['0, on the right side, in equation 1', '0, on the right side, in equation 2'])
+    expect(out.slice(2).map(x => x.phrase)).toEqual(['0, right side of the equation, in equation 1', '0, right side of the equation, in equation 2'])
   })
 })
 
@@ -99,7 +99,7 @@ describe('one clip', () => {
 describe('numbered container', () => {
   it('only an equation or a fraction is numbered; side groups are not', () => {
     const out = uniquePhrases([
-      t(1, 'the left side: y', 0.1, 0.1, 0.3, 0.2), t(2, 'the left side: y', 0.1, 0.6, 0.3, 0.2),
+      t(1, 'the left side of the equation: y', 0.1, 0.1, 0.3, 0.2), t(2, 'the left side of the equation: y', 0.1, 0.6, 0.3, 0.2),
       t(3, 'y', 0.15, 0.15, 0.05, 0.05), t(4, 'y', 0.15, 0.65, 0.05, 0.05),
     ])
     expect(out.some(x => x.phrase.includes('in left side'))).toBe(false)

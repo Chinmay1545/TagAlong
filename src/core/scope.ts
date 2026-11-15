@@ -1,9 +1,16 @@
 import { MAX_DIST } from './config'
 import type { Term } from './types'
 
-// Groups are phrased `the ${KIND}: ...` (see the phrase contract).
-const GROUP = /^the (top|bottom|fraction|left side|right side|equation|brackets): /
-export const groupKind = (phrase: string): string | null => GROUP.exec(phrase)?.[1] ?? null
+// Groups are phrased `the ${PLACE}: ...` (see the phrase contract). The one place that recognises them.
+export const GROUP = /^the (top of the fraction|bottom of the fraction|fraction|left side of the equation|right side of the equation|equation|brackets): /
+const KIND_OF: Record<string, string> = {
+  'top of the fraction': 'top', 'bottom of the fraction': 'bottom',
+  'left side of the equation': 'left side', 'right side of the equation': 'right side',
+}
+export const groupKind = (phrase: string): string | null => {
+  const m = GROUP.exec(phrase)?.[1]
+  return m ? KIND_OF[m] ?? m : null
+}
 
 // Words said right after "this" that choose a group. 'whole' means the largest group under the aim.
 const SCOPE: Record<string, string> = {

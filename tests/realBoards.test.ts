@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { parseBoardResponse } from '../server/parseBoard'
 import { uniquePhrases } from '../src/core/phrase'
-import { groupKind } from '../src/core/scope'
+import { GROUP, groupKind } from '../src/core/scope'
 import { TipBuffer } from '../src/core/tipBuffer'
 import { createLive } from '../src/live/live'
 import { overview } from '../src/live/overview'
@@ -19,7 +19,7 @@ import { inOrder, move, rest, rng } from './helpers/board'
 const load = (n: number): Term[] => uniquePhrases(parseBoardResponse(readFileSync(new URL(`./fixtures/real/real-board-${n}.txt`, import.meta.url), 'utf8')))
 const BOARDS = [1, 2, 3, 4, 5].map(n => ({ n, terms: load(n) }))
 
-const CONTRACT = /^the (top|bottom|fraction|left side|right side|equation|brackets): /
+const CONTRACT = GROUP
 const isGroup = (t: Term) => CONTRACT.test(t.phrase)
 const TOL = 0.01
 type Box = Term['box']
@@ -33,32 +33,32 @@ describe('speech on the real boards', () => {
     [
       "2x cubed, in the brackets",
       "5x squared, in the brackets",
-      "x plus 3, in the top",
-      "x plus 3, in the bottom",
-      "2x, in the bottom",
+      "x plus 3, top of the fraction",
+      "x plus 3, bottom of the fraction",
+      "2x, bottom of the fraction",
       "the brackets: 2x cubed plus 5x squared",
-      "the top: the quantity 2x cubed plus 5x squared, times the quantity x plus 3",
-      "the bottom: the quantity x plus 3, times 2x",
+      "the top of the fraction: the quantity 2x cubed plus 5x squared, times the quantity x plus 3",
+      "the bottom of the fraction: the quantity x plus 3, times 2x",
       "the fraction: the quantity 2x cubed plus 5x squared, times the quantity x plus 3, over the quantity x plus 3, times 2x",
     ]
   `))
   it('board 2', () => expect(BOARDS[1].terms.map(t => t.phrase)).toMatchInlineSnapshot(`
     [
-      "4x cubed, in the top",
-      "3x squared, in the top",
-      "2x, in the top",
-      "y, in the top",
-      "y squared, in the top",
-      "1, in the top",
-      "x to the fourth, in the bottom",
-      "9x squared, in the bottom",
-      "9, in the bottom",
-      "y plus 1, in the bottom",
-      "y plus 3, in the bottom",
+      "4x cubed, top of the fraction",
+      "3x squared, top of the fraction",
+      "2x, top of the fraction",
+      "y, top of the fraction",
+      "y squared, top of the fraction",
+      "1, top of the fraction",
+      "x to the fourth, bottom of the fraction",
+      "9x squared, bottom of the fraction",
+      "9, bottom of the fraction",
+      "y plus 1, bottom of the fraction",
+      "y plus 3, bottom of the fraction",
       "the brackets: 4x cubed plus 3x squared plus 2x",
       "the brackets: y plus y squared plus 1",
-      "the top: the quantity 4x cubed plus 3x squared plus 2x, times the quantity y plus y squared plus 1",
-      "the bottom: the quantity x to the fourth plus 9x squared plus 9, times the quantity y plus 1, times the quantity y plus 3",
+      "the top of the fraction: the quantity 4x cubed plus 3x squared plus 2x, times the quantity y plus y squared plus 1",
+      "the bottom of the fraction: the quantity x to the fourth plus 9x squared plus 9, times the quantity y plus 1, times the quantity y plus 3",
       "the fraction: the quantity 4x cubed plus 3x squared plus 2x, times the quantity y plus y squared plus 1, over the quantity x to the fourth plus 9x squared plus 9, times the quantity y plus 1, times the quantity y plus 3",
       "the brackets: x to the fourth plus 9x squared plus 9",
       "the brackets: y plus 1",
@@ -67,71 +67,71 @@ describe('speech on the real boards', () => {
   `))
   it('board 3', () => expect(BOARDS[2].terms.map(t => t.phrase)).toMatchInlineSnapshot(`
     [
-      "83x cubed, on the left side",
-      "4x squared, on the left side",
-      "9x, on the left side",
-      "5, on the left side",
-      "0, on the right side, in equation 1",
-      "y minus 1, on the left side",
-      "y plus 3, on the left side",
-      "0, on the right side, in equation 2",
-      "y, on the left side, in equation 3",
-      "1, on the right side",
-      "y, on the left side, in equation 4",
-      "negative 3, on the right side",
-      "the left side: 83x cubed plus 4x squared minus 9x plus 5",
-      "the right side: 0, in equation 1",
+      "83x cubed, left side of the equation",
+      "4x squared, left side of the equation",
+      "9x, left side of the equation",
+      "5, left side of the equation",
+      "0, right side of the equation, in equation 1",
+      "y minus 1, left side of the equation",
+      "y plus 3, left side of the equation",
+      "0, right side of the equation, in equation 2",
+      "y, left side of the equation, in equation 3",
+      "1, right side of the equation",
+      "y, left side of the equation, in equation 4",
+      "negative 3, right side of the equation",
+      "the left side of the equation: 83x cubed plus 4x squared minus 9x plus 5",
+      "the right side of the equation: 0, in equation 1",
       "the equation: 83x cubed plus 4x squared minus 9x plus 5 equals 0",
-      "the left side: the quantity y minus 1, times the quantity y plus 3",
-      "the right side: 0, in equation 2",
+      "the left side of the equation: the quantity y minus 1, times the quantity y plus 3",
+      "the right side of the equation: 0, in equation 2",
       "the equation: the quantity y minus 1, times the quantity y plus 3, equals 0",
-      "the left side: y, in equation 3",
-      "the right side: 1",
+      "the left side of the equation: y, in equation 3",
+      "the right side of the equation: 1",
       "the equation: y equals 1",
-      "the left side: y, in equation 4",
-      "the right side: negative 3",
+      "the left side of the equation: y, in equation 4",
+      "the right side of the equation: negative 3",
       "the equation: y equals negative 3",
     ]
   `))
   it('board 4', () => expect(BOARDS[3].terms.map(t => t.phrase)).toMatchInlineSnapshot(`
     [
-      "2x cubed, in the top",
-      "5x squared, in the top",
-      "x, in the top",
-      "3, in the top",
-      "x, in the bottom",
-      "3, in the bottom",
-      "2x, in the bottom",
+      "2x cubed, top of the fraction",
+      "5x squared, top of the fraction",
+      "x, top of the fraction",
+      "3, top of the fraction",
+      "x, bottom of the fraction",
+      "3, bottom of the fraction",
+      "2x, bottom of the fraction",
       "the brackets: 2x cubed plus 5x squared",
-      "the brackets: x plus 3, in the top",
-      "the brackets: x plus 3, in the bottom",
-      "the top: the quantity 2x cubed plus 5x squared, times the quantity x plus 3",
-      "the bottom: the quantity x plus 3, times 2x",
+      "the brackets: x plus 3, top of the fraction",
+      "the brackets: x plus 3, bottom of the fraction",
+      "the top of the fraction: the quantity 2x cubed plus 5x squared, times the quantity x plus 3",
+      "the bottom of the fraction: the quantity x plus 3, times 2x",
       "the fraction: the quantity 2x cubed plus 5x squared, times the quantity x plus 3, over the quantity x plus 3, times 2x",
     ]
   `))
   it('board 5', () => expect(BOARDS[4].terms.map(t => t.phrase)).toMatchInlineSnapshot(`
     [
-      "4x cubed, in the top",
-      "3x squared, in the top",
-      "2x, in the top",
-      "y, in the top",
-      "y squared, in the top",
-      "1, in the top",
-      "x to the fourth, in the bottom",
-      "9x squared, in the bottom",
-      "9, in the bottom",
-      "y, in the bottom, in the brackets y plus 1",
-      "1, in the bottom",
-      "y, in the bottom, in the brackets y plus 3",
-      "3, in the bottom",
+      "4x cubed, top of the fraction",
+      "3x squared, top of the fraction",
+      "2x, top of the fraction",
+      "y, top of the fraction",
+      "y squared, top of the fraction",
+      "1, top of the fraction",
+      "x to the fourth, bottom of the fraction",
+      "9x squared, bottom of the fraction",
+      "9, bottom of the fraction",
+      "y, bottom of the fraction, in the brackets y plus 1",
+      "1, bottom of the fraction",
+      "y, bottom of the fraction, in the brackets y plus 3",
+      "3, bottom of the fraction",
       "the brackets: 4x cubed plus 3x squared plus 2x",
       "the brackets: y plus y squared plus 1",
       "the brackets: x to the fourth plus 9x squared plus 9",
       "the brackets: y plus 1",
       "the brackets: y plus 3",
-      "the top: the quantity 4x cubed plus 3x squared plus 2x, times the quantity y plus y squared plus 1",
-      "the bottom: the quantity x to the fourth plus 9x squared plus 9, times the quantity y plus 1, times the quantity y plus 3",
+      "the top of the fraction: the quantity 4x cubed plus 3x squared plus 2x, times the quantity y plus y squared plus 1",
+      "the bottom of the fraction: the quantity x to the fourth plus 9x squared plus 9, times the quantity y plus 1, times the quantity y plus 3",
       "the fraction: the quantity 4x cubed plus 3x squared plus 2x, times the quantity y plus y squared plus 1, over the quantity x to the fourth plus 9x squared plus 9, times the quantity y plus 1, times the quantity y plus 3",
     ]
   `))

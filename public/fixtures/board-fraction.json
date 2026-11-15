@@ -3,7 +3,7 @@
   {
    "id": 1,
    "latex": "2x",
-   "phrase": "2x, in the top",
+   "phrase": "2x, top of the fraction",
    "box": {
     "x": 0.237,
     "y": 0.211,
@@ -14,7 +14,7 @@
   {
    "id": 2,
    "latex": "(x + 3)",
-   "phrase": "x plus 3, in the top",
+   "phrase": "x plus 3, top of the fraction",
    "box": {
     "x": 0.439,
     "y": 0.211,
@@ -25,7 +25,7 @@
   {
    "id": 3,
    "latex": "2x",
-   "phrase": "2x, in the bottom",
+   "phrase": "2x, bottom of the fraction",
    "box": {
     "x": 0.439,
     "y": 0.56,
@@ -36,7 +36,7 @@
   {
    "id": 4,
    "latex": "2x(x + 3)",
-   "phrase": "the top: 2x times the quantity x plus 3",
+   "phrase": "the top of the fraction: 2x times the quantity x plus 3",
    "box": {
     "x": 0.237,
     "y": 0.211,
@@ -47,7 +47,7 @@
   {
    "id": 5,
    "latex": "2x",
-   "phrase": "the bottom: 2x",
+   "phrase": "the bottom of the fraction: 2x",
    "box": {
     "x": 0.439,
     "y": 0.56,

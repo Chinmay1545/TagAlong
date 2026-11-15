@@ -6,6 +6,7 @@ import { kindOf } from '../vision/pointer'
 import { readBoard, termsFromSquare } from './boardClient'
 import { mergeTerms } from '../core/mergeTerms'
 import { uniquePhrases } from '../core/phrase'
+import { GROUP } from '../core/scope'
 
 // Strict >: a hand seen exactly HAND_RECENT_MS ago still counts as recent. Only a hand counts:
 // a laser dot covers nothing, and a stick covers too little to be worth the risk of a false detection.
@@ -33,7 +34,6 @@ export const isSettled = (stillTicks: number, intervalMs = BOARD_TICK_MS, settle
 // reading: a read is in flight.
 export type BoardLoop = { stop(): void; reset(): void; pendingRegion(): Box | null; lock(on: boolean): void; locked(): boolean; reading(): boolean }
 
-const GROUP = /^the (top|bottom|fraction|left side|right side|equation|brackets): /
 const inside = (b: Box, x: number, y: number) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h
 // New ink: a single term whose centre lies outside every single-term box already shown (a group's box
 // does not hide small ink written inside it, like a minus sign or an exponent).

@@ -52,19 +52,19 @@ describe('phraseFor', () => {
     expect(phraseFor('2x', on)).toBe('2x')
   })
   it.each([
-    ['top', '2x, in the top'],
-    ['bottom', '2x, in the bottom'],
+    ['top', '2x, top of the fraction'],
+    ['bottom', '2x, bottom of the fraction'],
     ['power', '2x, in the power'],
-    ['left', '2x, on the left side'],
-    ['right', '2x, on the right side'],
+    ['left', '2x, left side of the equation'],
+    ['right', '2x, right side of the equation'],
     ['bracket', '2x, in the brackets'],
   ])('term tag %s', (tag, out) => expect(phraseFor('2x', on, tag)).toBe(out))
   it.each([
-    ['numerator', 'the top: 2x'],
-    ['denominator', 'the bottom: 2x'],
+    ['numerator', 'the top of the fraction: 2x'],
+    ['denominator', 'the bottom of the fraction: 2x'],
     ['fraction', 'the fraction: 2x'],
-    ['lhs', 'the left side: 2x'],
-    ['rhs', 'the right side: 2x'],
+    ['lhs', 'the left side of the equation: 2x'],
+    ['rhs', 'the right side of the equation: 2x'],
     ['equation', 'the equation: 2x'],
     ['group', 'the brackets: 2x'],
   ])('group tag %s', (tag, out) => expect(phraseFor('2x', on, tag)).toBe(out))
@@ -97,13 +97,13 @@ describe('phraseFor', () => {
     for (const tag of [undefined, 'none', 'top', 'bottom', 'power', 'bracket', 'numerator', 'denominator', 'fraction', 'equation', 'group'])
       for (const l of ['2x', '\\frac{a}{b}', 'x^2'])
         expect(phraseFor(l, box(0.1, 0.1), tag)).not.toMatch(/\b(left|right|middle)\b/)
-    expect(phraseFor('5', on, 'left')).toBe('5, on the left side')
+    expect(phraseFor('5', on, 'left')).toBe('5, left side of the equation')
   })
   it('the saved demo board follows the contract', () => {
     const terms: Term[] = JSON.parse(readFileSync('public/fixtures/board-fraction.json', 'utf8')).terms
     expect(terms.map(t => t.phrase)).toEqual([
-      '2x, in the top', 'x plus 3, in the top', '2x, in the bottom',
-      'the top: 2x times the quantity x plus 3', 'the bottom: 2x', 'the fraction: 2x times the quantity x plus 3, over 2x',
+      '2x, top of the fraction', 'x plus 3, top of the fraction', '2x, bottom of the fraction',
+      'the top of the fraction: 2x times the quantity x plus 3', 'the bottom of the fraction: 2x', 'the fraction: 2x times the quantity x plus 3, over 2x',
     ])
     expect(phraseFor(terms[1].latex, terms[1].box, 'top')).toBe(terms[1].phrase)
     const inside = (g: Term, q: Term) => q.box.x >= g.box.x - 1e-9 && q.box.y >= g.box.y - 1e-9 && q.box.x + q.box.w <= g.box.x + g.box.w + 1e-9 && q.box.y + q.box.h <= g.box.y + g.box.h + 1e-9
@@ -117,8 +117,8 @@ describe('uniquePhrases', () => {
   const t = (id: number, latex: string, phrase: string, cx: number, cy: number): Term => ({ id, latex, phrase, box: box(cx, cy) })
 
   it('two equal groups keep the group form (suffix), so groupKind still matches', () => {
-    const out = uniquePhrases([t(1, '2x', 'the bottom: 2', 0.5, 0.2), t(2, '2x', 'the bottom: 2', 0.5, 0.6)])
-    expect(out.map(o => o.phrase)).toEqual(['the bottom: 2, first from the top', 'the bottom: 2, second from the top'])
+    const out = uniquePhrases([t(1, '2x', 'the bottom of the fraction: 2', 0.5, 0.2), t(2, '2x', 'the bottom of the fraction: 2', 0.5, 0.6)])
+    expect(out.map(o => o.phrase)).toEqual(['the bottom of the fraction: 2, first from the top', 'the bottom of the fraction: 2, second from the top'])
     for (const o of out) expect(groupKind(o.phrase)).toBe('bottom')
   })
 
