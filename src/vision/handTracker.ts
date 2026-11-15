@@ -2,6 +2,7 @@ import { HandLandmarker } from '@mediapipe/tasks-vision'
 import wasmLoaderPath from '@mediapipe/tasks-vision/vision_wasm_internal.js?url'
 import wasmBinaryPath from '@mediapipe/tasks-vision/vision_wasm_internal.wasm?url'
 import type { PointerPoint } from './pointer'
+import { handPoint } from './palm'
 import { handInfo, type HandInfo } from './stick'
 
 const create = (delegate: 'GPU' | 'CPU') =>
@@ -14,6 +15,7 @@ export async function startHandTracker(
   video: HTMLVideoElement,
   onTip: (p: PointerPoint) => void,
   onHand: (h: HandInfo | null) => void = () => {}, // the whole hand, for the stick detector
+  gesture: () => boolean = () => true, // open-hand gesture on? (read every frame, so a key can switch it at runtime)
 ): Promise<() => void> {
   let landmarker: HandLandmarker
   try {
@@ -29,10 +31,11 @@ export async function startHandTracker(
       try {
         const now = performance.now()
         const res = landmarker.detectForVideo(video, now)
-        const tip = res.landmarks[0]?.[8] // index fingertip
         const confidence = res.handedness?.[0]?.[0]?.score ?? 1
-        onHand(handInfo(res.landmarks[0], video.videoWidth / video.videoHeight, now))
-        if (tip) onTip({ kind: 'finger', x: tip.x, y: tip.y, confidence, t: now }) // unmirrored, never flip
+        const aspect = video.videoWidth / video.videoHeight
+        onHand(handInfo(res.landmarks[0], aspect, now))
+        const p = handPoint(res.landmarks[0], aspect, confidence, now, gesture()) // fingertip, or the palm for an open hand; unmirrored, never flip
+        if (p) onTip(p)
       } catch (e) {
         console.warn('detectForVideo failed, skipping frame:', (e as Error).message) // one bad frame must not kill tracking
       }

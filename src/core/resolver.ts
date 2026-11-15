@@ -1,5 +1,6 @@
-import { DWELL_MS, DWELL_RADIUS, MAX_DIST, NEST_SNAP, TIE_DIST, TIE_RATIO, TIP_WINDOW_MS } from './config'
-import { groupFor, groupKind, scopeFrom } from './scope'
+import { DWELL_MS, DWELL_RADIUS, MAX_DIST, NEST_SNAP, PALM_SHARE, TIE_DIST, TIE_RATIO, TIP_WINDOW_MS } from './config'
+import { groupFor, groupKind, scopeFrom, topGroupAt } from './scope'
+import { kindOf } from '../vision/pointer'
 import type { TipBuffer } from './tipBuffer'
 import type { Box, Resolution, Term, TipSample, WordEvent } from './types'
 
@@ -210,14 +211,19 @@ export function readPointer(word: WordEvent, terms: Term[], tips: TipBuffer, whe
   }
   // this / that / here: whisper only if the pointer (of any kind) rested on one spot around the word.
   // The pointer that counts is the one seen around the word itself (a laser put away a moment ago does not).
-  const { aim, landing } = dwellRead(tips.leadAt(t, windowMs), t, windowMs)
+  const hand = tips.leadAt(t, windowMs)
+  const { aim, landing } = dwellRead(hand, t, windowMs)
   const scope = scopeFrom(after)
   if (!aim) {
     const sweep = sweepGroup(terms, tips, t, scope)
     return sweep ? { ...none('not-pointing'), sweep } : none('not-pointing')
   }
   // Groups only through a scope word; a plain "this" sees single terms (a finger just off a term is not "the whole equation").
-  const term = (scope && groupFor(terms, aim, scope)) || termAt(terms.filter(x => !groupKind(x.phrase)), aim.x, aim.y, MAX_DIST, NEST_SNAP, TIE_DIST)
+  // Open hand: the samples of the rest itself (those within the dwell radius of its aim, so a fingertip cluster
+  // elsewhere does not count) are mostly palm. Then no scope word means the whole equation under the hand.
+  const run = hand.filter(p => Math.hypot(p.x - aim.x, p.y - aim.y) <= DWELL_RADIUS)
+  const open = run.length > 0 && run.filter(p => kindOf(p) === 'palm').length / run.length >= PALM_SHARE
+  const term = (scope && groupFor(terms, aim, scope)) || (open && topGroupAt(terms, aim)) || termAt(terms.filter(x => !groupKind(x.phrase)), aim.x, aim.y, MAX_DIST, NEST_SNAP, TIE_DIST)
   return term ? { resolution: { word, terms: [term] }, aim, miss: null, landing } : { ...none('empty-space', aim), landing }
 }
 

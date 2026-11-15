@@ -280,3 +280,19 @@ describe('judge screen: board lock and reading indicator', () => {
     expect(bar().classList.contains('on')).toBe(false)
   })
 })
+
+describe('judge screen: H switches the open-hand gesture', () => {
+  const status = (j: { container: HTMLElement }) => j.container.querySelector('.status')!.textContent
+  it('on by default, H toggles the label, ?hand=0 starts off', async () => {
+    const j = await mountJudge('')
+    expect(status(j)).toContain('open hand')
+    expect(j.container.querySelector('.kbd-strip')!.textContent).toContain('open hand')
+    await act(async () => { fireEvent.keyDown(window, { key: 'h' }) })
+    expect(status(j)).not.toContain('open hand')
+    await act(async () => { fireEvent.keyDown(window, { key: 'H' }) })
+    expect(status(j)).toContain('open hand')
+    unmountJudge()
+    const off = await mountJudge('?hand=0')
+    expect(status(off)).not.toContain('open hand')
+  })
+})
