@@ -65,7 +65,8 @@ export function fromSquare(b: Box, scaledW: number, scaledH: number): Box | null
   const cx = (b.x + b.w / 2) * kx, cy = (b.y + b.h / 2) * ky
   if (cx > 1 || cy > 1) return null
   const c = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 1e6) / 1e6 // 6 places: no float dust in a box
-  return { x: c(b.x * kx), y: c(b.y * ky), w: c(b.w * kx), h: c(b.h * ky) }
+  const x = c(b.x * kx), y = c(b.y * ky)
+  return { x, y, w: Math.min(c(b.w * kx), 1 - x), h: Math.min(c(b.h * ky), 1 - y) } // inside the frame
 }
 
 export const termsFromSquare = (terms: Term[], w: number, h: number): Term[] =>

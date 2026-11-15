@@ -33,6 +33,12 @@ export const isSettled = (stillTicks: number, intervalMs = BOARD_TICK_MS, settle
 // reading: a read is in flight.
 export type BoardLoop = { stop(): void; reset(): void; pendingRegion(): Box | null; lock(on: boolean): void; locked(): boolean; reading(): boolean }
 
+const GROUP = /^the (top|bottom|fraction|left side|right side|equation|brackets): /
+const inside = (b: Box, x: number, y: number) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h
+// New ink: a single term whose centre lies outside every box already shown.
+const foundNewInk = (shown: Term[], read: Term[]): boolean =>
+  read.some(t => !GROUP.test(t.phrase) && !shown.some(o => inside(o.box, t.box.x + t.box.w / 2, t.box.y + t.box.h / 2)))
+
 const FULL: Box = { x: 0, y: 0, w: 1, h: 1 }
 
 export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms: (terms: Term[]) => void): BoardLoop {
@@ -74,7 +80,7 @@ export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms
     const changed = lastRead === null || confirm || idle || frameChanged(lastRead, gray)
     if (!shouldReadBoard(now, tips.lastCoverAt(), changed)) return
     // Started by the timer alone (nothing changed, not a confirmation): the reader's detail varies between
-    // reads of the same board, so such a read may add terms but must never drop or replace any.
+    // reads of the same board, so such a read is used only when it found new ink, and shows nothing while streaming.
     const idleOnly = idle && !confirm && lastRead !== null && !frameChanged(lastRead, gray)
     inFlight = true
     confirm = false
@@ -100,13 +106,15 @@ export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms
         const terms = fix(await readBoard(blob, term => {
           if (!live()) return
           received.push(...fix([term]))
+          if (idleOnly) return
           show(mergeTerms(before, received, { dropMissing: false })) // draw each box as soon as it is read
         }))
         if (!live()) return
         emptyReads = terms.length ? 0 : emptyReads + 1
         if (emptyReads > 0 && emptyReads < EMPTY_READS_TO_CLEAR) { confirm = true; return } // re-read on the next settled check to confirm
         lastRead = gray
-        show(mergeTerms(before, terms, { dropMissing: !(idleOnly && terms.length) })) // same term, same box: no re-drawn boxes on a wobble
+        if (idleOnly && terms.length && !foundNewInk(before, terms)) return
+        show(mergeTerms(before, terms, { dropMissing: true })) // same term, same box: no re-drawn boxes on a wobble
       } catch (e) {
         if (!live()) return
         console.warn('board read failed, keeping last terms:', (e as Error).message)

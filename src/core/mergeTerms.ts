@@ -1,7 +1,8 @@
 import { MATCH_DIST } from './config'
 import type { Box, Term } from './types'
 
-const key = (latex: string) => latex.replace(/\s+/g, '')
+// spacing and braces around a single character (x^{3}, x_{1}) are spelling, not meaning
+const key = (latex: string) => latex.replace(/\s+/g, '').replace(/([\^_])\{(\w)\}/g, '$1$2')
 const centre = (b: Box) => ({ x: b.x + b.w / 2, y: b.y + b.h / 2 })
 const dist = (a: Box, b: Box) => { const p = centre(a), q = centre(b); return Math.hypot(p.x - q.x, p.y - q.y) }
 const overlaps = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h

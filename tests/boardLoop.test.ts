@@ -611,8 +611,8 @@ describe('square photo', () => {
   })
   it('clamps to the frame and drops a box centred in the padding', () => {
     const c = fromSquare({ x: 0.9, y: 0.3, w: 0.2, h: 0.2 }, 1280, 720)!
-    expect(c.x + c.w).toBeGreaterThan(1) // not cut off
-    expect(Math.max(c.x, c.y, c.w, c.h)).toBeLessThanOrEqual(1)
+    expect(c.x + c.w).toBeLessThanOrEqual(1)
+    expect(c.y + c.h).toBeLessThanOrEqual(1)
     expect(fromSquare({ x: 0.2, y: 0.8, w: 0.1, h: 0.1 }, 1280, 720)).toBeNull()
   })
   it('sends a square canvas with the frame at the top left, and converts streamed boxes before onTerms', async () => {
@@ -639,28 +639,33 @@ describe('square photo', () => {
     expect(sizes[0]).toEqual({ w: 1024, h: 1024 })
     expect(draws.some(a => a[1] === 0 && a[2] === 0 && a[3] === 1024 && a[4] === 576)).toBe(true)
     const box = shown[0][0].box
-    near(box.y, 0.889); near(box.h, 0.178)
+    near(box.y, 0.889); near(box.h, 0.111)
   })
 })
 
-describe('idle re-read of an unchanged board only adds', () => {
+describe('idle re-read of an unchanged board', () => {
   const extra: Term = { id: 3, latex: '7', phrase: 'the 7', box: { x: 0.6, y: 0.6, w: 0.1, h: 0.1 } }
-  const idle = (h: ReturnType<typeof harness>) => vi.advanceTimersByTimeAsync(IDLE_REREAD_MS + BOARD_INTERVAL_MS)
-  it('fewer terms keep all the old ones', async () => {
+  const group: Term = { id: 4, latex: '\\frac{2x}{2x}', phrase: 'the fraction: 2x, over 2x', box: { x: 0.15, y: 0.15, w: 0.3, h: 0.5 } }
+  const idle = () => vi.advanceTimersByTimeAsync(IDLE_REREAD_MS + BOARD_INTERVAL_MS)
+  it('fewer or differently grouped terms over the same ink change nothing and call nothing', async () => {
     const h = harness()
-    h.replies.push(fraction, [fraction[0]])
+    h.replies.push(fraction, [group], [fraction[0]])
     await h.tick()
-    await idle(h)
+    const n = h.shown.length
+    await idle()
     expect(h.reads()).toBe(2)
-    expect(h.shown.at(-1)).toEqual(fraction)
+    expect(h.shown.length).toBe(n)
+    await idle()
+    expect(h.reads()).toBe(3)
+    expect(h.shown.length).toBe(n)
     h.stop()
   })
-  it('a new extra term is added', async () => {
+  it('a term in a new place is applied as a finished read', async () => {
     const h = harness()
     h.replies.push(fraction, [fraction[0], extra])
     await h.tick()
-    await idle(h)
-    expect(h.shown.at(-1)!.map(t => t.latex).sort()).toEqual(['2x', '2x', '7'])
+    await idle()
+    expect(h.shown.at(-1)!.map(t => t.latex).sort()).toEqual(['2x', '7'])
     h.stop()
   })
   it('a read of a changed frame with fewer terms still drops', async () => {
