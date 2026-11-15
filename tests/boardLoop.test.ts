@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { BOARD_TICK_MS, READ_SETTLE_MS, isSettled, scaleToMax, shouldReadBoard, startBoardLoop } from '../src/board/boardLoop'
-import { isFixtureMode, loadFixture, readBoard } from '../src/board/boardClient'
+import { fromSquare, isFixtureMode, loadFixture, readBoard } from '../src/board/boardClient'
 import { TipBuffer } from '../src/core/tipBuffer'
 import type { Term } from '../src/core/types'
 import { BOARD_INTERVAL_MS, IDLE_REREAD_MS, SETTLE_MS } from '../src/core/config'
@@ -46,14 +46,16 @@ function harness(tips = new TipBuffer()) {
   const canvas = {
     width: 0, height: 0,
     getContext: () => ({
-      drawImage: () => {},
+      drawImage: () => {}, fillRect: () => {},
       getImageData: () => { const data = new Uint8ClampedArray(W * H * 4).fill(cam.scene); cam.paint?.(data); return { data } },
     }),
     toBlob: (cb: (b: Blob | null) => void) => cb(new Blob(['jpeg'])),
   }
   vi.stubGlobal('document', { createElement: () => canvas })
   const replies: Term[][] = []
-  const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ terms: replies.shift() ?? [] }) }))
+  // replies are written as frame boxes; the reader answers in square fractions, so squash them first
+  const toSq = (t: Term): Term => ({ ...t, box: { ...t.box, y: t.box.y * H / W, h: t.box.h * H / W } })
+  const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ terms: (replies.shift() ?? []).map(toSq) }) }))
   vi.stubGlobal('fetch', fetchMock)
   const video = { readyState: 4, videoWidth: W, videoHeight: H } as HTMLVideoElement
   const shown: Term[][] = []
@@ -521,7 +523,7 @@ describe('board loop: faster checks', () => {
     const mk = () => {
       const c = {
         width: 0, height: 0,
-        getContext: () => ({ drawImage: () => {}, getImageData: () => ({ data: new Uint8ClampedArray(W * H * 4).fill(50) }) }),
+        getContext: () => ({ drawImage: () => {}, fillRect: () => {}, getImageData: () => ({ data: new Uint8ClampedArray(W * H * 4).fill(50) }) }),
         toBlob: (cb: (b: Blob | null) => void) => { sizes.push({ w: c.width, h: c.height }); cb(new Blob(['j'])) },
       }
       return c
@@ -592,5 +594,87 @@ describe('board loop: lock during a read', () => {
     h.replies.push(fraction)
     await h.tick()
     expect(h.shown.at(-1)).toEqual(fraction)
+  })
+})
+
+describe('square photo', () => {
+  const near = (a: number, b: number) => expect(a).toBeCloseTo(b, 3)
+  it('fromSquare maps a 16:9 box back to the frame', () => {
+    const b = fromSquare({ x: 0.5, y: 0.3, w: 0.2, h: 0.1 }, 1280, 720)!
+    near(b.x, 0.5); near(b.y, 0.3 * 1024 / 576); near(b.w, 0.2); near(b.h, 0.1 * 1024 / 576)
+  })
+  it('fromSquare maps 4:3 and portrait frames', () => {
+    const a = fromSquare({ x: 0.1, y: 0.3, w: 0.1, h: 0.1 }, 1024, 768)!
+    near(a.y, 0.4); near(a.h, 0.1 * 4 / 3)
+    const p = fromSquare({ x: 0.3, y: 0.2, w: 0.1, h: 0.1 }, 576, 1024)!
+    near(p.x, 0.3 * 1024 / 576); near(p.y, 0.2); near(p.w, 0.1 * 1024 / 576)
+  })
+  it('clamps to the frame and drops a box centred in the padding', () => {
+    const c = fromSquare({ x: 0.9, y: 0.3, w: 0.2, h: 0.2 }, 1280, 720)!
+    expect(c.x + c.w).toBeLessThanOrEqual(1)
+    expect(c.y + c.h).toBeLessThanOrEqual(1)
+    expect(fromSquare({ x: 0.2, y: 0.8, w: 0.1, h: 0.1 }, 1280, 720)).toBeNull()
+  })
+  it('sends a square canvas with the frame at the top left, and converts streamed boxes before onTerms', async () => {
+    const W = 1280, H = 720
+    const draws: unknown[][] = []
+    const sizes: { w: number; h: number }[] = []
+    const mk = () => {
+      const c = {
+        width: 0, height: 0,
+        getContext: () => ({ drawImage: (...a: unknown[]) => draws.push(a), fillRect: () => {}, fillStyle: '', getImageData: () => ({ data: new Uint8ClampedArray(W * H * 4).fill(50) }) }),
+        toBlob: (cb: (b: Blob | null) => void) => { sizes.push({ w: c.width, h: c.height }); cb(new Blob(['j'])) },
+      }
+      return c
+    }
+    vi.stubGlobal('document', { createElement: mk })
+    const term = (y: number, h: number) => ({ type: 'term', term: { id: 1, latex: 'x', phrase: 'x', box: { x: 0.1, y, w: 0.1, h } } })
+    const body = [term(0.5, 0.1), { type: 'done' }].map(l => JSON.stringify(l) + '\n').join('')
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { headers: { 'content-type': 'application/x-ndjson' } })))
+    vi.useFakeTimers()
+    const shown: Term[][] = []
+    const loop = startBoardLoop({ readyState: 4, videoWidth: W, videoHeight: H } as HTMLVideoElement, new TipBuffer(), t => shown.push(t))
+    await vi.advanceTimersByTimeAsync(2000)
+    loop.stop()
+    expect(sizes[0]).toEqual({ w: 1024, h: 1024 })
+    expect(draws.some(a => a[1] === 0 && a[2] === 0 && a[3] === 1024 && a[4] === 576)).toBe(true)
+    const box = shown[0][0].box
+    near(box.y, 0.889); near(box.h, 0.111)
+  })
+})
+
+describe('idle re-read of an unchanged board', () => {
+  const extra: Term = { id: 3, latex: '7', phrase: 'the 7', box: { x: 0.6, y: 0.6, w: 0.1, h: 0.1 } }
+  const group: Term = { id: 4, latex: '\\frac{2x}{2x}', phrase: 'the fraction: 2x, over 2x', box: { x: 0.15, y: 0.15, w: 0.3, h: 0.5 } }
+  const idle = () => vi.advanceTimersByTimeAsync(IDLE_REREAD_MS + BOARD_INTERVAL_MS)
+  it('fewer or differently grouped terms over the same ink change nothing and call nothing', async () => {
+    const h = harness()
+    h.replies.push(fraction, [group], [fraction[0]])
+    await h.tick()
+    const n = h.shown.length
+    await idle()
+    expect(h.reads()).toBe(2)
+    expect(h.shown.length).toBe(n)
+    await idle()
+    expect(h.reads()).toBe(3)
+    expect(h.shown.length).toBe(n)
+    h.stop()
+  })
+  it('a term in a new place is applied as a finished read', async () => {
+    const h = harness()
+    h.replies.push(fraction, [fraction[0], extra])
+    await h.tick()
+    await idle()
+    expect(h.shown.at(-1)!.map(t => t.latex).sort()).toEqual(['2x', '7'])
+    h.stop()
+  })
+  it('a read of a changed frame with fewer terms still drops', async () => {
+    const h = harness()
+    h.replies.push(fraction, [fraction[0]])
+    await h.tick()
+    h.cam.scene = 220
+    await h.tick()
+    expect(h.shown.at(-1)!.length).toBe(1)
+    h.stop()
   })
 })

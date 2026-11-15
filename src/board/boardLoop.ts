@@ -3,7 +3,7 @@ import type { TipBuffer } from '../core/tipBuffer'
 import { EMPTY_READS_TO_CLEAR, HAND_RECENT_MS, IDLE_REREAD_MS, LASER_MASK_MS } from '../core/config'
 import { changedRegion, frameChanged, hideCells, toGraySmall } from '../core/frameDiff'
 import { kindOf } from '../vision/pointer'
-import { readBoard } from './boardClient'
+import { readBoard, termsFromSquare } from './boardClient'
 import { mergeTerms } from '../core/mergeTerms'
 import { uniquePhrases } from '../core/phrase'
 
@@ -32,6 +32,12 @@ export const isSettled = (stillTicks: number, intervalMs = BOARD_TICK_MS, settle
 // read will come, so a "this" must not wait). lock: freeze the boxes as they are; reset unlocks.
 // reading: a read is in flight.
 export type BoardLoop = { stop(): void; reset(): void; pendingRegion(): Box | null; lock(on: boolean): void; locked(): boolean; reading(): boolean }
+
+const GROUP = /^the (top|bottom|fraction|left side|right side|equation|brackets): /
+const inside = (b: Box, x: number, y: number) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h
+// New ink: a single term whose centre lies outside every box already shown.
+const foundNewInk = (shown: Term[], read: Term[]): boolean =>
+  read.some(t => !GROUP.test(t.phrase) && !shown.some(o => inside(o.box, t.box.x + t.box.w / 2, t.box.y + t.box.h / 2)))
 
 const FULL: Box = { x: 0, y: 0, w: 1, h: 1 }
 
@@ -73,6 +79,9 @@ export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms
     const idle = ticksSinceRead * BOARD_TICK_MS >= IDLE_REREAD_MS // nothing read for a while: read anyway
     const changed = lastRead === null || confirm || idle || frameChanged(lastRead, gray)
     if (!shouldReadBoard(now, tips.lastCoverAt(), changed)) return
+    // Started by the timer alone (nothing changed, not a confirmation): the reader's detail varies between
+    // reads of the same board, so such a read is used only when it found new ink, and shows nothing while streaming.
+    const idleOnly = idle && !confirm && lastRead !== null && !frameChanged(lastRead, gray)
     inFlight = true
     confirm = false
     ticksSinceRead = 0
@@ -82,21 +91,29 @@ export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms
     const received: Term[] = []
     const live = () => !stopped && gen === generation
     const to = scaleToMax(w, h, MAX_SIDE)
-    small.width = to.w
-    small.height = to.h
-    small.getContext('2d')!.drawImage(canvas, 0, 0, to.w, to.h)
+    // Square photo: the reader measures boxes right on a square, but squashes y on a wide photo.
+    const side = Math.max(to.w, to.h)
+    small.width = side
+    small.height = side
+    const sctx = small.getContext('2d')!
+    sctx.fillStyle = '#000'
+    sctx.fillRect(0, 0, side, side)
+    sctx.drawImage(canvas, 0, 0, to.w, to.h)
+    const fix = (terms: Term[]) => termsFromSquare(terms, to.w, to.h)
     small.toBlob(async blob => {
       try {
         if (!blob) throw new Error('toBlob returned null')
-        const terms = await readBoard(blob, term => {
+        const terms = fix(await readBoard(blob, term => {
           if (!live()) return
-          received.push(term)
+          received.push(...fix([term]))
+          if (idleOnly) return
           show(mergeTerms(before, received, { dropMissing: false })) // draw each box as soon as it is read
-        })
+        }))
         if (!live()) return
         emptyReads = terms.length ? 0 : emptyReads + 1
         if (emptyReads > 0 && emptyReads < EMPTY_READS_TO_CLEAR) { confirm = true; return } // re-read on the next settled check to confirm
         lastRead = gray
+        if (idleOnly && terms.length && !foundNewInk(before, terms)) return
         show(mergeTerms(before, terms, { dropMissing: true })) // same term, same box: no re-drawn boxes on a wobble
       } catch (e) {
         if (!live()) return
