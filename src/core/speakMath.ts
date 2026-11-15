@@ -15,8 +15,10 @@ function quantities(s: string): string {
 }
 
 // Board phrase -> speakable English. Pure; hyphenated words ("well-known") stay untouched.
+const ORD: Record<string, string> = { 4: 'fourth', 5: 'fifth', 6: 'sixth', 7: 'seventh', 8: 'eighth', 9: 'ninth', 10: 'tenth' }
 export function speakMath(phrase: string): string {
-  return quantities(phrase)
+  // A minus at the start, or right after "=" or "(", is a sign ("negative 3"), not a subtraction.
+  return quantities(phrase.replace(/(^|[=(])\s*-\s*(?=[\w(])/g, '$1 negative '))
     .replace(/√\s*/g, 'sqrt ')
     .replace(/sqrt\s*\(([^()]*)\)/gi, 'the square root of $1')
     .replace(/\bsqrt\s+/gi, 'the square root of ')
@@ -27,9 +29,9 @@ export function speakMath(phrase: string): string {
     .replace(/\b([a-z])\(/gi, '$1 of ')
     .replace(/(\d)(?=[a-z])/gi, '$1 ')
     .replace(/\s+-\s+|(?<=\d|\)|(?<![a-z])[a-z])-(?=\d|\(|[a-z](?![a-z]))/gi, ' minus ') // letter-hyphen-letter only for single letters, so "top-left" survives
-    .replace(/\^2|²/g, ' squared')
-    .replace(/\^3|³/g, ' cubed')
-    .replace(/\^(\w+)/g, ' to the $1')
+    .replace(/\^2(?!\w)|²/g, ' squared')
+    .replace(/\^3(?!\w)|³/g, ' cubed')
+    .replace(/\^(\w+)/g, (_, e: string) => ` to the ${Object.hasOwn(ORD, e) ? ORD[e] : e}`)
     .replace(/\s*\+\s*/g, ' plus ')
     .replace(/\s*=\s*/g, ' equals ')
     .replace(/\s*\/\s*/g, ' over ')

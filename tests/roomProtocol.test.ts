@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isRoomName, parseCameraMsg, studentLinkPath, whisperFromResolution, MAX_BOARD_PHRASES } from '../src/live/roomProtocol'
+import { isRoomName, parseCameraMsg, studentLinkPath, whisperFromResolution, MAX_BOARD_PHRASES, MAX_PHRASE } from '../src/live/roomProtocol'
 import type { Resolution } from '../src/core/types'
 
 describe('room names', () => {
@@ -33,7 +33,7 @@ describe('parseCameraMsg (what the camera device may send)', () => {
       JSON.stringify({ type: 'whisper', word: 'this', items: [{ phrase: 'p', x: 2 }] }),
       JSON.stringify({ type: 'whisper', word: 'x'.repeat(30), items: [{ phrase: 'p', x: 0.5 }] }),
       JSON.stringify({ type: 'whisper', word: 'this', items: Array.from({ length: 9 }, () => ({ phrase: 'p', x: 0.5 })) }),
-      JSON.stringify({ type: 'board', phrases: ['p'.repeat(201)] }),
+      JSON.stringify({ type: 'board', phrases: ['p'.repeat(MAX_PHRASE + 1)] }),
       JSON.stringify({ type: 'board', phrases: Array.from({ length: MAX_BOARD_PHRASES + 1 }, () => 'p') }),
       JSON.stringify({ type: 'board', phrases: [3] }),
       JSON.stringify({ type: 'notice', text: 'n'.repeat(301) }),
@@ -53,7 +53,7 @@ describe('board overview', () => {
     expect(parseCameraMsg(board({}))).toEqual({ type: 'board', phrases: ['a', 'b'] })
   })
   it('rejects a bad overview', () => {
-    for (const overview of ['x', [3], ['p'.repeat(201)], Array.from({ length: MAX_BOARD_PHRASES + 1 }, () => 'p'), ['']])
+    for (const overview of ['x', [3], ['p'.repeat(MAX_PHRASE + 1)], Array.from({ length: MAX_BOARD_PHRASES + 1 }, () => 'p'), ['']])
       expect(parseCameraMsg(board({ overview })), JSON.stringify(overview).slice(0, 30)).toBeNull()
   })
 })

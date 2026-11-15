@@ -10,9 +10,9 @@ export const isBoardQuery = (text: string): boolean => {
 }
 
 // Rows by box centre y (within ROW_TOL of the row's first term), then left to right.
-export function readingOrder(terms: Term[]): Term[] {
-  const cy = (t: Term) => t.box.y + t.box.h / 2
-  const rows: Term[][] = []
+export function readingOrder<T extends { box: Term["box"] }>(terms: T[]): T[] {
+  const cy = (t: T) => t.box.y + t.box.h / 2
+  const rows: T[][] = []
   for (const t of [...terms].sort((a, b) => cy(a) - cy(b))) {
     const row = rows[rows.length - 1]
     if (row && cy(t) - cy(row[0]) < ROW_TOL) row.push(t)
