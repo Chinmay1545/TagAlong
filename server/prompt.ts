@@ -10,7 +10,7 @@ latex|tag|x|y|w|h
   for a term, where it lives in the math: top (in a numerator), bottom (in a denominator), power (in an exponent), left (left of an equals sign), right (right of an equals sign), bracket (inside brackets), none
   for a group: numerator, denominator, fraction, lhs, rhs, equation, group (brackets)
   a term inside a numerator is tagged top, not numerator; inside a denominator bottom, not denominator; numerator and denominator are only for the group that holds the whole top or bottom
-- x|y|w|h: tight bounding box as whole numbers from 0 to 1000 (thousandths of the image width and height), top left origin; a group's box covers all its parts
+- x|y|w|h: tight bounding box as whole numbers from 0 to 1000 (thousandths of the image width and height), top left origin; a group's box covers all its parts. The photo is square and may have black padding below or to the right: measure boxes in thousandths of the full square image
 Example 1: 2x(x+3) over 2x, then 3x + 5 = 20:
 2x|top|237|211|95|150
 (x + 3)|top|439|211|231|153
