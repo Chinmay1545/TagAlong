@@ -47,3 +47,11 @@ describe('a plain "this" sees single terms only', () => {
     expect(read(FRACTION, 0.4, 0.45, ['fraction'])).toEqual([16])
   })
 })
+
+describe('tie rule: silent only when close in distance AND in ratio', () => {
+  const box = (id: number, x: number) => t(id, `term ${id}`, x, 0.2, 0.1, 0.1)
+  const at = (aX: number, bX: number) => read([box(1, aX), box(2, bX)], 0.29, 0.25).join()
+  it('0.010 vs 0.020 -> the nearer one', () => expect(at(0.30, 0.17)).toBe('1'))
+  it('0.015 vs 0.020 -> silent', () => expect(at(0.305, 0.17)).toBe(''))
+  it('inside a box always wins', () => expect(at(0.25, 0.28)).toBe('1'))
+})
