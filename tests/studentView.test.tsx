@@ -13,7 +13,7 @@ const spoken = () => document.querySelector('[aria-live]')!.textContent
 
 beforeEach(async () => {
   got = []
-  judge = new BroadcastChannel('this-and-that')
+  judge = new BroadcastChannel('tagalong')
   judge.onmessage = e => got.push(e.data as Msg)
   render(<StudentView />)
   await act(() => sleep(20))

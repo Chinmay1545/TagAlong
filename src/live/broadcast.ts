@@ -17,7 +17,7 @@ export type Msg =
 
 export type Channel = { postMessage(m: unknown): void; close(): void; onmessage: ((e: { data: unknown }) => void) | null }
 
-const NAME = 'this-and-that'
+const NAME = 'tagalong'
 const open = (): Channel | null => (typeof BroadcastChannel === 'undefined' ? null : (new BroadcastChannel(NAME) as Channel))
 
 export const resolutionMsg = (r: Resolution, latencyMs: number | null, withoutApp: boolean): Msg => ({

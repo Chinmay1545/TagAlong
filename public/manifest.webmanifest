@@ -1,7 +1,7 @@
 {
-  "name": "THIS & THAT",
-  "short_name": "This & That",
-  "description": "Hear what the teacher means by this and that.",
+  "name": "TagAlong",
+  "short_name": "TagAlong",
+  "description": "Hear exactly what the teacher points at.",
   "display": "standalone",
   "start_url": "/?classes",
   "scope": "/",

@@ -12,7 +12,7 @@ async function judgeWithStudent(search = '?demo=1') {
   vi.doMock('../src/vision/grabFrame', () => ({ grabJpeg: async () => new Blob([new Uint8Array([0xff, 0xd8])], { type: 'image/jpeg' }) }))
   const j = await mountJudge(search)
   got.length = 0
-  student = new BroadcastChannel('this-and-that')
+  student = new BroadcastChannel('tagalong')
   student.onmessage = e => got.push(e.data as Msg)
   const fromStudent = async (m: Msg) => { await act(async () => { student!.postMessage(m); await sleep(30) }) }
   const say = async (text: string) => { await act(async () => { window.__tt!.say(text); await sleep(30) }) }

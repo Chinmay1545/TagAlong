@@ -54,7 +54,7 @@ export function NotesPanel({ segs, report }: { segs: Segment[]; report?: ReportC
     const url = URL.createObjectURL(new Blob([fullText()], { type: 'text/plain' }))
     const a = document.createElement('a')
     a.href = url
-    a.download = 'this-and-that-notes.txt'
+    a.download = 'tagalong-notes.txt'
     a.click()
     setTimeout(() => URL.revokeObjectURL(url), 0)
   }

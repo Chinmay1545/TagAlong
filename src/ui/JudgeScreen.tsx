@@ -494,7 +494,7 @@ export function JudgeScreen() {
     <main className="judge">
       <div className="grain" aria-hidden="true" />
       <header className="masthead rise" style={step(0)}>
-        <div className="wordmark"><span className="dot" aria-hidden="true" />THIS &amp; THAT</div>
+        <div className="wordmark"><span className="dot" aria-hidden="true" />TagAlong</div>
         <div className="status mono">board · {boardAgo}<span className="status-gap" />speech · {speechLabel}<span className="status-gap" />pointers · {pointersLabel({ ...tools, hand: handOn }, !!stage.photo)}<span className="status-gap" /><a className="student-link" href="/?student=1" target="student" onClick={e => { e.preventDefault(); window.open('/?student=1', 'student', 'popup,width=1280,height=800') }} title="Opens in its own window; keep this window visible so hand tracking keeps running">Open student view</a></div>
         <ClassPanel classroom={classRef.current} onLiveChange={live => playerRef.current.setSilent(live)} />
       </header>
