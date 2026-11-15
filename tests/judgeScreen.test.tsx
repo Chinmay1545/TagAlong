@@ -42,6 +42,23 @@ describe('judge screen: demo mode and live mode', () => {
   })
 })
 
+describe('judge screen: groups on the overlay', () => {
+  const GROUP = { id: 9, latex: '', phrase: 'the top: 2x times x plus 3', box: { x: 0.2, y: 0.2, w: 0.45, h: 0.15 } }
+  it('a group is not labelled (and not counted in TERMS) until it is the one just resolved', async () => {
+    const j = await mountJudge('')
+    await act(async () => { j.fakes.setTerms!([...FIXTURE, GROUP]) })
+    expect(j.stat('terms')).toBe('3')
+    await j.redraw()
+    expect(j.fakes.texts).toContain(FIXTURE[0].phrase)
+    expect(j.fakes.texts).not.toContain(GROUP.phrase)
+    for (let i = 0; i < 12; i++) { j.fakes.pushPoint!({ kind: 'finger', x: 0.375, y: 0.27, confidence: 1, t: performance.now() }); await j.wait(30) }
+    await j.key('p')
+    expect(j.log()[0]).toMatch(/^this → the top: 2x times x plus 3/)
+    await j.redraw()
+    expect(j.fakes.texts).toContain(GROUP.phrase)
+  })
+})
+
 describe('judge screen: reset button', () => {
   it('live: asks the board loop to start again and the boxes go at once', async () => {
     const j = await mountJudge('')
@@ -226,5 +243,35 @@ describe('judge screen: a word waiting for its second look is dropped on reset a
     await j.key('p')
     await j.wait(RECHECK_MS + 150)
     expect(j.log()).toEqual(['this → silent'])
+  })
+})
+
+describe('judge screen: board lock and reading indicator', () => {
+  it('F locks the board (pill shown, legend lists it), F again unlocks, Reset unlocks', async () => {
+    const j = await mountJudge('')
+    const pill = () => j.container.querySelector('.vf-lock')!.textContent
+    expect(j.container.querySelector('.kbd-strip')!.textContent).toContain('lock board')
+    expect(pill()).toBe('')
+    await j.key('f')
+    expect(pill()).toBe('Board locked')
+    await j.key('F')
+    expect(pill()).toBe('')
+    await j.key('f')
+    expect(pill()).toBe('Board locked')
+    fireEvent.click([...j.container.querySelectorAll('button')].find(b => b.textContent === 'Reset board')!)
+    expect(pill()).toBe('')
+  })
+  it('shows "Reading the board" (aria-hidden) while a read is in flight', async () => {
+    const j = await mountJudge('')
+    const bar = () => j.container.querySelector('.vf-reading') as HTMLElement
+    expect(bar().getAttribute('aria-hidden')).toBe('true')
+    expect(bar().classList.contains('on')).toBe(false)
+    j.fakes.reading = true
+    await j.wait(600)
+    expect(bar().classList.contains('on')).toBe(true)
+    expect(bar().textContent).toBe('Reading the board')
+    j.fakes.reading = false
+    await j.wait(600)
+    expect(bar().classList.contains('on')).toBe(false)
   })
 })

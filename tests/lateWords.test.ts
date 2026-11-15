@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { TipBuffer } from '../src/core/tipBuffer'
 import { createLive } from '../src/live/live'
 import { readPointer } from '../src/core/resolver'
-import { LATE_WINDOW_MS, RECHECK_MS, TIP_WINDOW_MS, WEB_SPEECH_LAG_MS } from '../src/core/config'
+import { LATE_WINDOW_MS, RECHECK_MS, SCOPE_WAIT_MS, TIP_WINDOW_MS, WEB_SPEECH_LAG_MS } from '../src/core/config'
 import type { Box, Resolution, Term } from '../src/core/types'
 import type { AnyPoint } from '../src/vision/pointer'
 import type { WordItem } from '../src/speech/words'
@@ -114,7 +114,9 @@ describe('browser speech: the word arrives after it was said', () => {
   it('words with exact timing (Transcribe) keep the exact rule: the pointer at the time the word was said', () => {
     const s = setup(inOrder(rest('finger', c1.x, c1.y, 0, 600), move('finger', c1, c3, 633, 870), rest('finger', c3.x, c3.y, 900, 2000)), 2000)
     s.transcribe('this', 0.3)
-    s.transcribe('that', 1.5)
+    s.transcribe('that', 1.5) // the next item ends the wait of "this"; "that" is last, so it waits for scope words
+    expect(s.got).toEqual([names(T1)])
+    s.pass(SCOPE_WAIT_MS)
     expect(s.got).toEqual([names(T1), names(T3)])
     expect(s.timers).toEqual([])
   })
@@ -179,6 +181,7 @@ describe('the finger is only just arriving: wait a moment and look again', () =>
   it('a timed word that arrived long after it was said is not rechecked: its moment has passed', () => {
     const s = setup(move('finger', away, c1, 0, 3000), 3000)
     s.transcribe('this', 1.0)
+    s.pass(SCOPE_WAIT_MS) // the scope-word wait (from its arrival), then answered at once: no recheck
     expect(s.got).toEqual([[]])
     expect(s.timers).toEqual([])
   })

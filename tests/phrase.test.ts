@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { latexToPlain, positionWords, phraseFor, uniquePhrases } from '../src/core/phrase'
+import { groupKind } from '../src/core/scope'
 import type { Term } from '../src/core/types'
 
 const box = (cx: number, cy: number) => ({ x: cx - 0.05, y: cy - 0.05, w: 0.1, h: 0.1 })
@@ -43,27 +44,83 @@ describe('positionWords', () => {
 })
 
 describe('phraseFor', () => {
-  it('speaks the LaTeX and adds where it is', () => {
-    expect(phraseFor('\\frac{a}{b}', box(0.8, 0.8))).toBe('the a over b on the bottom right')
-    expect(phraseFor('x^2', box(0.5, 0.2))).toBe('the x squared on top')
+  const on = box(0.5, 0.2)
+  it('a term with no tag is spoken only, never a screen position', () => {
+    expect(phraseFor('x^2', on)).toBe('x squared')
+    expect(phraseFor('x^2', on, 'none')).toBe('x squared')
+    expect(phraseFor('x^2', on, 'banana')).toBe('x squared')
+    expect(phraseFor('2x', on)).toBe('2x')
   })
-  it('speaks everyday LaTeX cleanly (no command names, no doubled "the")', () => {
-    const on = box(0.5, 0.2)
-    expect(phraseFor('\\frac{a^{2}}{b}', on)).toBe('the a squared over b on top')
-    expect(phraseFor('\\sqrt{x}', on)).toBe('the square root of x on top')
-    expect(phraseFor('\\sqrt[3]{x}', on)).toBe('the cube root of x on top')
-    expect(phraseFor('\\sqrt[4]{y}', on)).toBe('the fourth root of y on top')
-    expect(phraseFor('\\pm 3', on)).toBe('the plus or minus 3 on top')
+  it.each([
+    ['top', '2x, in the top'],
+    ['bottom', '2x, in the bottom'],
+    ['power', '2x, in the power'],
+    ['left', '2x, on the left side'],
+    ['right', '2x, on the right side'],
+    ['bracket', '2x, in the brackets'],
+  ])('term tag %s', (tag, out) => expect(phraseFor('2x', on, tag)).toBe(out))
+  it.each([
+    ['numerator', 'the top: 2x'],
+    ['denominator', 'the bottom: 2x'],
+    ['fraction', 'the fraction: 2x'],
+    ['lhs', 'the left side: 2x'],
+    ['rhs', 'the right side: 2x'],
+    ['equation', 'the equation: 2x'],
+    ['group', 'the brackets: 2x'],
+  ])('group tag %s', (tag, out) => expect(phraseFor('2x', on, tag)).toBe(out))
+  it('speaks the demo board math naturally', () => {
+    const say = (l: string) => phraseFor(l, on)
+    expect(say('(x + 3)')).toBe('x plus 3')
+    expect(say('2x(x+3)')).toBe('2x times the quantity x plus 3')
+    expect(say('2(x+3)')).toBe('2 times the quantity x plus 3')
+    expect(say('\\frac{2x(x+3)}{2x}')).toBe('2x times the quantity x plus 3, over 2x')
+    expect(say('3x + 5')).toBe('3x plus 5')
+    expect(say('(x - 4)')).toBe('x minus 4')
+    expect(say('3(x - 4) + 5')).toBe('3 times the quantity x minus 4, plus 5')
+    expect(say('(x - 3)(x + 3)')).toBe('the quantity x minus 3, times the quantity x plus 3')
+    expect(say('(x + 2)(x + 3)')).toBe('the quantity x plus 2, times the quantity x plus 3')
+    expect(say('2x(x + 3)')).toBe('2x times the quantity x plus 3')
+    expect(phraseFor('\\frac{x^2-9}{x^2+5x+6} = \\frac{(x-3)(x+3)}{(x+2)(x+3)}', on, 'equation')).toBe(
+      'the equation: x squared minus 9, over x squared plus 5x plus 6, equals the quantity x minus 3, times the quantity x plus 3, over the quantity x plus 2, times the quantity x plus 3')
+    expect(say('20')).toBe('20')
+    expect(say('3x + 5 = 20')).toBe('3x plus 5 equals 20')
+    expect(say('x^2')).toBe('x squared')
+    expect(say('x = 5')).toBe('x equals 5')
   })
-  it('matches the positions in the saved demo board', () => {
+  it('speaks everyday LaTeX cleanly', () => {
+    expect(phraseFor('\\frac{a^{2}}{b}', on)).toBe('a squared, over b')
+    expect(phraseFor('\\sqrt{x}', on)).toBe('the square root of x')
+    expect(phraseFor('\\sqrt[3]{x}', on)).toBe('the cube root of x')
+    expect(phraseFor('\\pm 3', on)).toBe('plus or minus 3')
+  })
+  it('never says a screen position unless the tag is a side of the equation', () => {
+    for (const tag of [undefined, 'none', 'top', 'bottom', 'power', 'bracket', 'numerator', 'denominator', 'fraction', 'equation', 'group'])
+      for (const l of ['2x', '\\frac{a}{b}', 'x^2'])
+        expect(phraseFor(l, box(0.1, 0.1), tag)).not.toMatch(/\b(left|right|middle)\b/)
+    expect(phraseFor('5', on, 'left')).toBe('5, on the left side')
+  })
+  it('the saved demo board follows the contract', () => {
     const terms: Term[] = JSON.parse(readFileSync('public/fixtures/board-fraction.json', 'utf8')).terms
-    expect(terms.map(t => positionWords(t.box))).toEqual(['on top left', 'on top', 'on the bottom'])
-    expect(phraseFor(terms[1].latex, terms[1].box)).toBe('the x plus 3 on top')
+    expect(terms.map(t => t.phrase)).toEqual([
+      '2x, in the top', 'x plus 3, in the top', '2x, in the bottom',
+      'the top: 2x times the quantity x plus 3', 'the bottom: 2x', 'the fraction: 2x times the quantity x plus 3, over 2x',
+    ])
+    expect(phraseFor(terms[1].latex, terms[1].box, 'top')).toBe(terms[1].phrase)
+    const inside = (g: Term, q: Term) => q.box.x >= g.box.x - 1e-9 && q.box.y >= g.box.y - 1e-9 && q.box.x + q.box.w <= g.box.x + g.box.w + 1e-9 && q.box.y + q.box.h <= g.box.y + g.box.h + 1e-9
+    expect([0, 1].every(i => inside(terms[3], terms[i]))).toBe(true)
+    expect(inside(terms[4], terms[2])).toBe(true)
+    expect(terms.slice(0, 5).every(q => inside(terms[5], q))).toBe(true)
   })
 })
 
 describe('uniquePhrases', () => {
   const t = (id: number, latex: string, phrase: string, cx: number, cy: number): Term => ({ id, latex, phrase, box: box(cx, cy) })
+
+  it('two equal groups keep the group form (suffix), so groupKind still matches', () => {
+    const out = uniquePhrases([t(1, '2x', 'the bottom: 2', 0.5, 0.2), t(2, '2x', 'the bottom: 2', 0.5, 0.6)])
+    expect(out.map(o => o.phrase)).toEqual(['the bottom: 2, first from the top', 'the bottom: 2, second from the top'])
+    for (const o of out) expect(groupKind(o.phrase)).toBe('bottom')
+  })
 
   it('tells apart a numerator and denominator that got the same phrase', () => {
     const out = uniquePhrases([t(1, '2x', 'the 2 x in the middle', 0.5, 0.42), t(2, '2x', 'the 2 x in the middle', 0.5, 0.52)])

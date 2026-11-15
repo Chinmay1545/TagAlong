@@ -1,4 +1,5 @@
 import type { Resolution } from '../core/types'
+import { topLevel } from './overview'
 
 export type Msg =
   | { type: 'resolution'; word: string; phrase: string | null; latencyMs: number | null; muted: boolean }
@@ -27,7 +28,7 @@ export const resolutionMsg = (r: Resolution, latencyMs: number | null, withoutAp
   muted: withoutApp && r.terms.length > 0,
 })
 export const finalMsg = (said: string, meant: string): Msg => ({ type: 'final', said, meant })
-export const boardMsg = (r: Resolution): Msg => ({ type: 'board', phrases: r.terms.map(t => t.phrase) })
+export const boardMsg = (r: Resolution): Msg => ({ type: 'board', phrases: topLevel(r.terms).map(t => t.phrase) })
 export const modeMsg = (withoutApp: boolean): Msg => ({ type: 'mode', withoutApp })
 
 export const helloMsg = (): Msg => ({ type: 'hello' })

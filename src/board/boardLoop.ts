@@ -1,6 +1,6 @@
 import type { Box, Term } from '../core/types'
 import type { TipBuffer } from '../core/tipBuffer'
-import { BOARD_INTERVAL_MS, EMPTY_READS_TO_CLEAR, HAND_RECENT_MS, IDLE_REREAD_MS, LASER_MASK_MS, SETTLE_MS } from '../core/config'
+import { EMPTY_READS_TO_CLEAR, HAND_RECENT_MS, IDLE_REREAD_MS, LASER_MASK_MS } from '../core/config'
 import { changedRegion, frameChanged, hideCells, toGraySmall } from '../core/frameDiff'
 import { kindOf } from '../vision/pointer'
 import { readBoard } from './boardClient'
@@ -13,18 +13,32 @@ export function shouldReadBoard(now: number, lastTipAt: number | null, changed: 
   return changed && (lastTipAt === null || now - lastTipAt > HAND_RECENT_MS)
 }
 
+export const BOARD_TICK_MS = 500 // how often the board is checked (cheap 64x36 diff; a read only starts when it changed)
+export const READ_SETTLE_MS = 600 // a changed picture must stay still this long before it is read
+const MAX_SIDE = 1024 // the photo sent is scaled to this long side: boxes are normalised, so nothing else changes
+
+// Smaller photo, faster read. Never enlarges.
+export function scaleToMax(w: number, h: number, max: number): { w: number; h: number } {
+  const k = Math.min(1, max / Math.max(w, h))
+  return { w: Math.round(w * k), h: Math.round(h * k) }
+}
+
 // Counted in checks (not wall time) so it is exact under any clock: still for at least SETTLE_MS.
-export const isSettled = (stillTicks: number, intervalMs = BOARD_INTERVAL_MS, settleMs = SETTLE_MS): boolean =>
+export const isSettled = (stillTicks: number, intervalMs = BOARD_TICK_MS, settleMs = READ_SETTLE_MS): boolean =>
   stillTicks * intervalMs >= settleMs
 
 // stop/reset as before; pendingRegion: the area that changed since the last good read and is not read yet
-// (or is being read right now), null when the boxes on screen are up to date. Used to hold a "this".
-export type BoardLoop = { stop(): void; reset(): void; pendingRegion(): Box | null }
+// (or is being read right now), null when the boxes on screen are up to date (and always while locked: no
+// read will come, so a "this" must not wait). lock: freeze the boxes as they are; reset unlocks.
+// reading: a read is in flight.
+export type BoardLoop = { stop(): void; reset(): void; pendingRegion(): Box | null; lock(on: boolean): void; locked(): boolean; reading(): boolean }
 
 const FULL: Box = { x: 0, y: 0, w: 1, h: 1 }
 
 export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms: (terms: Term[]) => void): BoardLoop {
   const canvas = document.createElement('canvas')
+  const small = document.createElement('canvas') // what is sent
+  let lockedOn = false
   let lastRead: Uint8Array | null = null
   let inFlight = false
   let stopped = false
@@ -40,7 +54,7 @@ export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms
   const show = (terms: Term[]) => { current = uniquePhrases(terms); onTerms(current) }
 
   const tick = () => {
-    if (inFlight || video.readyState < 2 || !video.videoWidth) return
+    if (lockedOn || inFlight || video.readyState < 2 || !video.videoWidth) return
     ticksSinceRead++
     const { videoWidth: w, videoHeight: h } = video
     canvas.width = w
@@ -56,7 +70,7 @@ export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms
     stillTicks = lastSeen !== null && !frameChanged(lastSeen, gray) ? stillTicks + 1 : 0
     lastSeen = gray
     if (!isSettled(stillTicks)) return
-    const idle = ticksSinceRead * BOARD_INTERVAL_MS >= IDLE_REREAD_MS // nothing read for a while: read anyway
+    const idle = ticksSinceRead * BOARD_TICK_MS >= IDLE_REREAD_MS // nothing read for a while: read anyway
     const changed = lastRead === null || confirm || idle || frameChanged(lastRead, gray)
     if (!shouldReadBoard(now, tips.lastCoverAt(), changed)) return
     inFlight = true
@@ -67,7 +81,11 @@ export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms
     const before = current
     const received: Term[] = []
     const live = () => !stopped && gen === generation
-    canvas.toBlob(async blob => {
+    const to = scaleToMax(w, h, MAX_SIDE)
+    small.width = to.w
+    small.height = to.h
+    small.getContext('2d')!.drawImage(canvas, 0, 0, to.w, to.h)
+    small.toBlob(async blob => {
       try {
         if (!blob) throw new Error('toBlob returned null')
         const terms = await readBoard(blob, term => {
@@ -88,14 +106,17 @@ export function startBoardLoop(video: HTMLVideoElement, tips: TipBuffer, onTerms
         inFlight = false
         reading = null
       }
-    }, 'image/jpeg', 0.85)
+    }, 'image/jpeg', 0.8)
   }
 
-  const id = setInterval(tick, BOARD_INTERVAL_MS)
+  const id = setInterval(tick, BOARD_TICK_MS)
   return {
     stop: () => { stopped = true; clearInterval(id) },
     // Reset button: clear the boxes now and forget the last frame, so the next tick reads the board from scratch.
-    reset: () => { generation++; lastRead = null; emptyReads = 0; confirm = false; show([]) },
-    pendingRegion: () => reading ?? (lastSeen === null ? null : lastRead === null ? FULL : changedRegion(lastRead, lastSeen)),
+    reset: () => { generation++; lockedOn = false; lastRead = null; emptyReads = 0; confirm = false; show([]) },
+    lock: on => { lockedOn = on; if (on) generation++ }, // a read in flight is dropped: the boxes must not change once locked
+    locked: () => lockedOn,
+    reading: () => inFlight && !lockedOn,
+    pendingRegion: () => lockedOn ? null : reading ?? (lastSeen === null ? null : lastRead === null ? FULL : changedRegion(lastRead, lastSeen)),
   }
 }

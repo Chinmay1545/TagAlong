@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { createClassroom } from '../src/live/classroom'
+import { MAX_BOARD_PHRASES, MAX_ITEMS, MAX_PHRASE, parseCameraMsg } from '../src/live/roomProtocol'
 import type { RoomState } from '../src/live/roomClient'
 import type { Resolution, Term } from '../src/core/types'
 
@@ -45,10 +46,30 @@ describe('classroom (camera device side)', () => {
     classroom.notice('Class is ending.')
     expect(last().sent).toEqual([
       { type: 'status', open: true },
-      { type: 'board', phrases: ['the x on the left', 'the 6 on the right'] },
+      { type: 'board', phrases: ['the x on the left', 'the 6 on the right'], overview: ['the x on the left', 'the 6 on the right'] },
       { type: 'whisper', word: 'this', items: [{ phrase: 'the x on the left', x: 0.15000000000000002 }] },
       { type: 'notice', text: 'Class is ending.' },
     ])
+  })
+
+  it('a long equation phrase and a huge board still make messages the server accepts', async () => {
+    const { classroom, last } = setup()
+    await classroom.open('math201')
+    last().on.onState?.('open')
+    const long = 'the equation: ' + 'x plus 1, '.repeat(24) + 'end' // 14 + 240 + 3 chars, over MAX_PHRASE
+    expect(long.length).toBeGreaterThan(200)
+    classroom.board([term(1, long, 0.1, 0.1), ...Array.from({ length: 100 }, (_, i) => term(i + 2, `t${i}`, 0.5, 0.2 + i * 0.001))])
+    const b = last().sent.at(-1) as { phrases: string[]; overview: string[] }
+    expect(b.phrases).toHaveLength(MAX_BOARD_PHRASES)
+    expect(b.overview).toHaveLength(MAX_BOARD_PHRASES)
+    for (const p of [...b.phrases, ...b.overview]) expect(p.length).toBeLessThanOrEqual(MAX_PHRASE)
+    expect(parseCameraMsg(JSON.stringify(b ? { type: 'board', ...b } : null))).not.toBeNull()
+    const many = { word: { word: 'these', t: 0, isPointer: true }, terms: Array.from({ length: 12 }, (_, i) => term(i, i ? `p${i}` : long, 0.1, 0.1)) }
+    classroom.whisper(many)
+    const w = last().sent.at(-1) as { items: { phrase: string }[] }
+    expect(w.items).toHaveLength(MAX_ITEMS)
+    expect(w.items[0].phrase.length).toBe(MAX_PHRASE)
+    expect(parseCameraMsg(JSON.stringify(w))).not.toBeNull()
   })
 
   it('after a reconnect, re-sends the class status and the latest board', async () => {
@@ -59,7 +80,7 @@ describe('classroom (camera device side)', () => {
     last().sent.length = 0
     last().on.onState?.('reconnecting')
     last().on.onState?.('open')
-    expect(last().sent).toEqual([{ type: 'status', open: true }, { type: 'board', phrases: ['the x on the left'] }])
+    expect(last().sent).toEqual([{ type: 'status', open: true }, { type: 'board', phrases: ['the x on the left'], overview: ['the x on the left'] }])
   })
 
   it('reports listener counts and connection state', async () => {

@@ -30,6 +30,7 @@ import { ReportCard } from './ReportCard'
 import { NotesPanel } from './NotesPanel'
 import { ModeSwitch, PointerLog, Readout, StatsStrip, type Last } from './Panels'
 import { Readiness } from './Readiness'
+import { groupKind } from '../core/scope'
 import { createBroadcaster, resolutionMsg, finalMsg, boardMsg, modeMsg, subscribe, markedMsg, assistMsg, noticeMsg } from '../live/broadcast'
 import { createClassroom, type Classroom } from '../live/classroom'
 import { ClassPanel } from './ClassPanel'
@@ -164,6 +165,8 @@ export function JudgeScreen() {
   const [fps, setFps] = useState(0)
   const [boardAgo, setBoardAgo] = useState<string>('none')
   const [termCount, setTermCount] = useState(0)
+  const [locked, setLocked] = useState(false) // board frozen: boxes stay as they are
+  const [reading, setReading] = useState(false) // a board read is in flight
   const [camError, setCamError] = useState<string | null>(null)
   const [speech, setSpeech] = useState<Speech>('off')
   const [whisperOn, setWhisperOn] = useState(true)
@@ -207,6 +210,7 @@ export function JudgeScreen() {
   const resetBoard = () => {
     resolvedRef.current = []
     liveRef.current.cancelWaiting()
+    setLocked(false)
     if (boardLoopRef.current) boardLoopRef.current.reset()
     else setTerms([])
   }
@@ -214,7 +218,7 @@ export function JudgeScreen() {
   const setTerms = (terms: Term[]) => {
     termsRef.current = terms
     boardAtRef.current = performance.now()
-    setTermCount(terms.length)
+    setTermCount(terms.filter(t => !groupKind(t.phrase)).length)
     prepare(terms)
     classRef.current.board(terms)
     liveRef.current.checkHeld() // a "this" said before this box was read can be whispered now
@@ -232,7 +236,7 @@ export function JudgeScreen() {
           const terms = await loadFixture()
           if (cancelled) return
           termsRef.current = terms
-          setTermCount(terms.length)
+          setTermCount(terms.filter(t => !groupKind(t.phrase)).length)
           prepare(terms)
           classRef.current.board(terms) // student phones get the saved board too
         } catch (e) {
@@ -262,6 +266,7 @@ export function JudgeScreen() {
       const now = performance.now()
       liveRef.current.checkHeld() // gives up on held words that waited too long
       setFps(tipsRef.current.window(now - 1000, now).filter(s => kindOf(s) === 'finger').length)
+      setReading(boardLoopRef.current?.reading() ?? false)
       const at = boardAtRef.current
       setBoardAgo(fixture ? 'fixture' : at === null ? 'none' : `${((now - at) / 1000).toFixed(0)}s ago`)
     }, 500)
@@ -303,6 +308,7 @@ export function JudgeScreen() {
       const hue = signalRef.current?.muted ? NEUTRAL : ACCENT // without app: show the match, not as a whisper
       for (const t of termsRef.current) {
         const on = hit.includes(t)
+        const group = !!groupKind(t.phrase)
         const x = flipX(t.box.x, t.box.w) * W, y = t.box.y * H
         if (on) {
           ctx.globalAlpha = 0.12
@@ -312,8 +318,10 @@ export function JudgeScreen() {
         }
         ctx.lineWidth = on ? 2 : 1
         ctx.strokeStyle = on ? hue : LINE
+        ctx.globalAlpha = group && !on ? 0.4 : 1 // a group box is a faint outline; its label would pile on its terms' labels
         drawBox(ctx, t.box, W, H)
-        drawLabel(ctx, t.phrase, x, y - 4, on ? hue : null, small)
+        ctx.globalAlpha = 1
+        if (!group || on) drawLabel(ctx, t.phrase, x, y - 4, on ? hue : null, small)
       }
       const tip = activePointer(tipsRef.current.all(), now) // laser, then stick, then finger
       if (signalRef.current && !reduceMotion?.matches) drawSignal(ctx, signalRef.current, tip, now, W, H)
@@ -386,6 +394,11 @@ export function JudgeScreen() {
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
       const k = e.key.toLowerCase()
       if (k === 'w') { toggleWhisperRef.current(); return }
+      if (k === 'f') { // freeze the boxes for the demo; pointing, speech and whispers keep working
+        const loop = boardLoopRef.current
+        if (loop) { loop.lock(!loop.locked()); setLocked(loop.locked()) }
+        return
+      }
       if (k === 'y' || k === 'n') {
         const r = applyMark(rowsRef.current, tallyRef.current, k)
         rowsRef.current = r.rows
@@ -492,6 +505,8 @@ export function JudgeScreen() {
             {stage.photo && <img className="demo-photo" src={stage.photo} alt="Saved demo board" />}
             <canvas ref={canvasRef} />
           </div>
+          <div className="vf-lock" aria-live="polite">{locked && <span className="vf-tag"><span className="dot" aria-hidden="true" />Board locked</span>}</div>
+          <span className={`vf-reading${reading ? ' on' : ''}`} aria-hidden="true">Reading the board</span>
           <span className="vf-tag vf-src"><span className="dot" aria-hidden="true" />{stage.photo ? 'DEMO' : 'LIVE'}</span>
           <span className="vf-tag vf-fps">{fps} FPS</span>
         </div>
@@ -500,6 +515,7 @@ export function JudgeScreen() {
           <span><kbd>Y</kbd> correct</span>
           <span><kbd>N</kbd> wrong</span>
           <span><kbd>W</kbd> with / without app</span>
+          <span><kbd>F</kbd> lock board</span>
         </div>
         {camError && <div className="cam-error" role="alert">{camError}</div>}
       </section>

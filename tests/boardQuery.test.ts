@@ -42,6 +42,14 @@ describe('live board query', () => {
     expect(board[0][1]).toBe(100)
     expect(res).toHaveLength(0)
   })
+  it('a board with groups: only the top-level items are read, not every term and group', () => {
+    const g = (id: number, phrase: string, x: number, y: number, w: number, h: number): Term => ({ id, latex: '', phrase, box: { x, y, w, h } })
+    const board = [g(1, '2x, in the top', 0.2, 0.2, 0.1, 0.1), g(2, '2x, in the bottom', 0.2, 0.6, 0.1, 0.1),
+      g(3, 'the top: 2x', 0.2, 0.2, 0.1, 0.1), g(4, 'the fraction: 2x, over 2x', 0.2, 0.2, 0.1, 0.5)]
+    const { live, play } = setup(board)
+    live.handleFinal("what's on the board", 0, 400)
+    expect(play.mock.calls[0][0].terms.map(t => t.phrase)).toEqual(['the fraction: 2x, over 2x'])
+  })
   it('disabled: emits null latency, no sound', () => {
     const { live, board } = setup([T(1, 0.1, 0.2)], false)
     live.handleFinal('read the board', 0, 400)

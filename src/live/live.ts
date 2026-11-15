@@ -1,9 +1,10 @@
 import { readPointer, termAt, type When } from '../core/resolver'
-import { HOLD_MAX_MS, LATE_WINDOW_MS, MAX_DIST, RECHECK_MS, TIP_WINDOW_MS, WEB_SPEECH_LAG_MS } from '../core/config'
+import { HOLD_MAX_MS, LATE_WINDOW_MS, MAX_DIST, RECHECK_MS, SCOPE_SPAN_MS, SCOPE_WAIT_MS, TIP_WINDOW_MS, WEB_SPEECH_LAG_MS } from '../core/config'
 import type { TipBuffer } from '../core/tipBuffer'
 import type { Box, Resolution, Term, WordEvent } from '../core/types'
 import type { createWhisperPlayer } from '../audio/whisper'
-import { isBoardQuery, readingOrder } from './boardQuery'
+import { isBoardQuery } from './boardQuery'
+import { topLevel } from './overview'
 import { detectPointerWords, type WordItem } from '../speech/words'
 
 export type Live = {
@@ -51,16 +52,64 @@ export function createLive({ getTerms, tips, player, now = () => performance.now
   // behind it. `round` goes up on cancelWaiting, so a timer set before it does nothing when it fires.
   let waiting = false
   let round = 0
-  let queue: { word: WordEvent; when: When }[] = []
-  const take = (word: WordEvent, when: When) => {
-    if (waiting) { queue.push({ word, when }); return }
-    resolve(word, when, true)
+  let scoped: { word: WordEvent; go: () => void } | null = null // the word waiting for scope words, and how to stop its wait early
+  let queue: { word: WordEvent; when: When; until: number }[] = [] // until: when a scope wait must end (0: no wait)
+  const drain = () => {
+    while (!waiting && queue.length) { const next = queue.shift()!; start(next.word, next.when, next.until) }
+  }
+  const start = (word: WordEvent, when: When, until: number) => {
+    const wait = until - now() // measured now: a word that queued behind another keeps its cap from its own arrival
+    if (!until || wait <= 0 || scopeSettled(word)) { resolve(word, when, true); return }
+    // Transcribe sends words one by one: the scope words after "this" arrive a moment later. Look at the
+    // pointer around the word's own time (`when`), but read the words only after they had time to come.
+    waiting = true
+    const mine = round
+    let done = false
+    const go = () => {
+      if (done || mine !== round) return // already released by a later item, or cancelled
+      done = true
+      scoped = null
+      waiting = false
+      resolve(word, when, true)
+      drain()
+    }
+    scoped = { word, go }
+    later(go, wait)
+  }
+  const take = (word: WordEvent, when: When, until: number) => {
+    if (waiting) { queue.push({ word, when, until }); return }
+    start(word, when, until)
+  }
+  // The latest items of the current utterance, so scope words can be found after a pointer word.
+  let utter: WordItem[] = []
+  let audioStart: number | null = null
+  const itemT = (it: WordItem) => (it.startTime !== undefined && audioStart !== null ? audioStart + it.startTime * 1000 : it.arrivedAt)
+  const norm = (it: WordItem) => it.content.toLowerCase().replace(/[^a-z]/g, '')
+  const indexOf = (word: WordEvent) => utter.findIndex(it => norm(it) === word.word && itemT(it) === word.t)
+  // Words that may be scope words: the next 3 items (2 for browser speech, which has no timing), said within
+  // SCOPE_SPAN_MS after the pointer word, in the same segment when segments exist.
+  const lateWords = new WeakSet<WordEvent>()
+  const wordsAfter = (word: WordEvent): string[] => {
+    const i = indexOf(word)
+    if (i < 0) return []
+    const me = utter[i]
+    return utter.slice(i + 1, i + 1 + (lateWords.has(word) ? 2 : 3))
+      .filter(it => (me.segment === undefined || it.segment === undefined || it.segment === me.segment) && (lateWords.has(word) || itemT(it) - word.t <= SCOPE_SPAN_MS))
+      .map(norm)
+  }
+  // The wait for scope words is over once the next item of the utterance has arrived, unless the items so far
+  // are only "whole" (more is coming: "this whole thing"). Items said too late to count end the wait too.
+  const scopeSettled = (word: WordEvent) => {
+    const i = indexOf(word)
+    if (i < 0 || i + 1 >= utter.length) return i < 0
+    const after = wordsAfter(word)
+    return !(after.length && after.every(w => w === 'whole'))
   }
   // One pointer word. when: the moment to look at. recheck: allowed to wait and look once more.
   const resolve = (word: WordEvent, when: When, recheck: boolean) => {
     // The gate runs first: a word said with nothing resting on the board ('not-pointing') is silent
     // and is never held, so it cannot be whispered late when a box shows up.
-    const { resolution, aim, miss, landing } = readPointer(word, getTerms(), tips, when)
+    const { resolution, aim, miss, landing, sweep } = readPointer(word, getTerms(), tips, when, wordsAfter(word))
     if ((miss === 'not-pointing' || landing) && recheck && SINGLE.has(word.word) && now() < when.at + when.windowMs) {
       // Nothing is resting yet, or the pointer is just settling on a new spot while an older rest exists.
       // The time around the word is not over, so look once more shortly instead of answering silent or
@@ -71,10 +120,11 @@ export function createLive({ getTerms, tips, player, now = () => performance.now
         if (mine !== round) return // cancelled
         waiting = false
         resolve(word, when, false)
-        while (!waiting && queue.length) { const next = queue.shift()!; resolve(next.word, next.when, true) }
+        drain()
       }, RECHECK_MS)
       return
     }
+    if (sweep && SINGLE.has(word.word)) { emit({ word, terms: [sweep] }); return } // no rest, but a sweep over several terms
     if (miss === 'empty-space' && aim && SINGLE.has(word.word)) {
       // The pointer rests on a spot with no box. If that spot is ink the board read has not drawn yet,
       // hold the word instead of going silent; checkHeld whispers it when the box arrives.
@@ -85,11 +135,23 @@ export function createLive({ getTerms, tips, player, now = () => performance.now
   }
   return {
     handleItems(items, audioStartPerf, late = false) {
+      // Callers send either the whole utterance again or only the new items: keep one growing list.
+      audioStart = audioStartPerf
+      utter = items.length >= utter.length && (!utter.length || norm(items[0]) === norm(utter[0])) ? items : [...utter, ...items]
+      if (scoped && scopeSettled(scoped.word)) scoped.go()
       for (const word of detectPointerWords(items, seen, audioStartPerf)) {
         // A late word (browser speech) was said some time before it arrived, and the finger may have left
         // since. Look around the moment it was probably said, and further back, instead of around now.
         const when: When = late ? { at: word.t - WEB_SPEECH_LAG_MS, windowMs: LATE_WINDOW_MS } : { at: word.t, windowMs: TIP_WINDOW_MS }
-        take(word, when)
+        // Timed (Transcribe) word with nothing (or only "whole") after it yet: wait for the next item, at most
+        // SCOPE_WAIT_MS after this word ARRIVED (partials come 300-800 ms after the speech, so time since it was
+        // said would be used up already). Browser speech has the whole phrase.
+        if (late) lateWords.add(word)
+        const i = indexOf(word)
+        const timed = !late && SINGLE.has(word.word) && i >= 0 && utter[i].startTime !== undefined && audioStartPerf !== null
+        const after = timed ? wordsAfter(word) : []
+        const open = after.every(w => w === 'whole') && (after.length === 0 ? i === utter.length - 1 : i + after.length === utter.length - 1)
+        take(word, when, timed && open ? utter[i].arrivedAt + SCOPE_WAIT_MS : 0)
       }
     },
     cancelWaiting() { round++; waiting = false; queue = [] },
@@ -109,7 +171,7 @@ export function createLive({ getTerms, tips, player, now = () => performance.now
     handleFinal(text, t0, t1) {
       finalCbs.forEach(cb => cb(text, t0, t1))
       if (!isBoardQuery(text)) return
-      const terms = readingOrder(getTerms())
+      const terms = topLevel(getTerms()) // the short list, in reading order: not every term and group
       const r: Resolution = { word: { word: 'board', t: t1, isPointer: false }, terms }
       const played = terms.length ? player.play(r) : null // one call: whisper flush only applies to the first term
       boardCbs.forEach(cb => cb(r, played ? played.startedAt - t1 : null))
@@ -118,6 +180,6 @@ export function createLive({ getTerms, tips, player, now = () => performance.now
     onResolution: cb => sub(resCbs, cb),
     onFinalSegment: cb => sub(finalCbs, cb),
     setWhisperEnabled: on => player.setEnabled(on),
-    resetUtterance: () => seen.clear(),
+    resetUtterance: () => { seen.clear(); utter = [] },
   }
 }

@@ -25,7 +25,7 @@ describe('createTermStream (JSON reply)', () => {
   it('emits each term as soon as its object closes, whatever the chunk size', () => {
     for (const size of [1, 3, 7, 50, reply.length]) {
       const { all } = feed(reply, size)
-      expect(all).toEqual(['2x', '(x + 3)', '2x'])
+      expect(all).toEqual(['2x', '(x + 3)', '2x', '2x(x + 3)', '2x', '\\frac{2x(x + 3)}{2x}'])
     }
   })
   it('emits the first term before the reply is complete', () => {
@@ -109,9 +109,9 @@ describe('POST /api/read-board streaming (NDJSON)', () => {
     expect(r.status).toBe(200)
     expect(r.type).toContain('application/x-ndjson')
     const lines = r.text.trim().split('\n').map(l => JSON.parse(l))
-    expect(lines.slice(0, 3)).toEqual(fixture.terms.map((term: unknown) => ({ type: 'term', term })))
-    expect(lines[3]).toMatchObject({ type: 'done', count: 3 })
-    expect(typeof lines[3].ms).toBe('number')
+    expect(lines.slice(0, 6)).toEqual(fixture.terms.map((term: unknown) => ({ type: 'term', term })))
+    expect(lines[6]).toMatchObject({ type: 'done', count: 6 })
+    expect(typeof lines[6].ms).toBe('number')
   })
   it('a model error after some terms ends with a generic error line', async () => {
     const parts = chunks(reply, 40)
@@ -125,7 +125,7 @@ describe('POST /api/read-board streaming (NDJSON)', () => {
   it('without a stream model, streaming falls back to the one-shot call', async () => {
     const app = createApp(async () => reply)
     const lines = (await postStream(app, 'application/x-ndjson')).text.trim().split('\n').map(l => JSON.parse(l))
-    expect(lines.map(l => l.type)).toEqual(['term', 'term', 'term', 'done'])
+    expect(lines.map(l => l.type)).toEqual(['term', 'term', 'term', 'term', 'term', 'term', 'done'])
   })
   it('a plain JSON request still gets the old reply, even with a stream model', async () => {
     const app = createApp(async () => reply, undefined, undefined, { streamModel: streamOf(chunks(reply, 40)) })

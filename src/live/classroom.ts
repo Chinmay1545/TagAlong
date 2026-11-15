@@ -1,6 +1,7 @@
 import type { Resolution, Term } from '../core/types'
 import { readingOrder } from './boardQuery'
-import { whisperFromResolution, type CameraMsg } from './roomProtocol'
+import { overview } from './overview'
+import { clipPhrase, MAX_BOARD_PHRASES, whisperFromResolution, type CameraMsg } from './roomProtocol'
 import { connectRoom, roomSocketUrl, type RoomState } from './roomClient'
 
 // Camera device side of the classroom relay: opens a class (a room), publishes every whisper and the board,
@@ -65,7 +66,8 @@ export function createClassroom(deps: Deps = defaultDeps()) {
     },
     whisper(r: Resolution) { const m = whisperFromResolution(r); if (m) send(m) },
     board(terms: Term[]) {
-      board = { type: 'board', phrases: readingOrder(terms).map(t => t.phrase) }
+      const clip = (ps: string[]) => ps.slice(0, MAX_BOARD_PHRASES).map(clipPhrase) // the server drops a whole board over either limit
+      board = { type: 'board', phrases: clip(readingOrder(terms).map(t => t.phrase)), overview: clip(overview(terms)) }
       send(board)
     },
     notice(text: string) { send({ type: 'notice', text }) },

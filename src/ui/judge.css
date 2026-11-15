@@ -76,6 +76,13 @@ kbd { font-family: var(--mono); font-size: 11px; line-height: 1; color: var(--te
 .vf-tag .dot { width: 6px; height: 6px; }
 .vf-src { top: 24px; left: 24px; }
 .vf-fps { bottom: 24px; right: 24px; }
+.vf-lock { position: absolute; top: 24px; right: 24px; }
+.vf-lock .vf-tag { position: static; }
+/* Always in the layout (opacity only), so a read starting or ending shifts nothing. */
+.vf-reading { position: absolute; bottom: 24px; left: 24px; overflow: hidden; font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: 0.1em; color: #e4e4e7; background: rgba(9, 9, 11, 0.8); border: 1px solid var(--accent-edge); border-radius: 4px; padding: 5px 9px; pointer-events: none; opacity: 0; transition: opacity 0.25s; }
+.vf-reading.on { opacity: 1; }
+.vf-reading::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, var(--accent-soft), transparent); transform: translateX(-100%); }
+.vf-reading.on::after { animation: sweep 1.4s linear infinite; }
 
 .kbd-strip { display: flex; flex-wrap: wrap; gap: 8px 22px; padding: 0 12px; font-size: 13px; color: var(--muted); }
 .kbd-strip span { display: inline-flex; align-items: center; gap: 8px; }

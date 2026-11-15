@@ -1,3 +1,4 @@
+import { groupKind } from './scope'
 import { speakMath } from './speakMath'
 import type { Box } from './types'
 
@@ -47,9 +48,21 @@ export function positionWords(b: Box): string {
   return h ? `on the ${h}` : 'in the middle'
 }
 
-export function phraseFor(latex: string, box: Box): string {
-  const spoken = speakMath(latexToPlain(latex))
-  return `${/^the\b/i.test(spoken) ? '' : 'the '}${spoken} ${positionWords(box)}`
+const PLACE: Record<string, string> = {
+  top: 'in the top', bottom: 'in the bottom', power: 'in the power',
+  left: 'on the left side', right: 'on the right side', bracket: 'in the brackets',
+}
+const KIND: Record<string, string> = {
+  numerator: 'top', denominator: 'bottom', fraction: 'fraction', lhs: 'left side',
+  rhs: 'right side', equation: 'equation', group: 'brackets',
+}
+
+// Spoken math + where it lives in the MATH (never where it sits on screen). `_box` is kept for callers.
+// "2x" stays "2x" here: the phone's speech step (speakMath) spaces it for the voice.
+export function phraseFor(latex: string, _box: Box, tag?: string): string {
+  const spoken = speakMath(latexToPlain(latex)).replace(/(\d) (?=[a-z]\b)/gi, '$1')
+  if (tag && Object.hasOwn(KIND, tag)) return `the ${KIND[tag]}: ${spoken}`
+  return tag && Object.hasOwn(PLACE, tag) ? `${spoken}, ${PLACE[tag]}` : spoken
 }
 
 // Phrases come from position bands in the frame, so two terms can get the same one (a 2x numerator and a 2x
@@ -83,7 +96,8 @@ export function uniquePhrases<T extends { phrase: string; box: Box }>(terms: T[]
     const sorted = [...idx].sort((a, b) => centre(terms[a].box)[axis] - centre(terms[b].box)[axis] || a - b)
     sorted.forEach((i, rank) => {
       const p = originalOf(terms[i])
-      if (sorted.length === 2) renamed.set(i, withAdjective(p, axis === 'y' ? (rank ? 'lower' : 'upper') : (rank ? 'right' : 'left')))
+      // A group phrase keeps `the KIND: ` at the front (groupKind needs it), so it always takes the suffix form.
+      if (sorted.length === 2 && !groupKind(p)) renamed.set(i, withAdjective(p, axis === 'y' ? (rank ? 'lower' : 'upper') : (rank ? 'right' : 'left')))
       else renamed.set(i, `${p.trim().replace(/\s+/g, ' ')}, ${ORDER[rank] ?? `number ${rank + 1}`} from the ${axis === 'y' ? 'top' : 'left'}`)
     })
   }
