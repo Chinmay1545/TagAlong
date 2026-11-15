@@ -85,7 +85,7 @@ describe('parseBoardResponse: compact line format', () => {
 describe('parseBoardResponse: tagged lines', () => {
   it('reads latex|tag|x|y|w|h and builds the contract phrase', () => {
     const r = parseBoardResponse('2x|top|237|211|95|150\n(x + 3)|top|439|211|231|153\n2x|bottom|439|560|96|149\n2x(x+3)|numerator|237|211|433|153\n\\frac{2x(x+3)}{2x}|fraction|219|211|562|498')
-    expect(r.map(t => t.phrase)).toEqual(['2x, in the top', 'x plus 3, in the top', '2x, in the bottom', 'the top: 2x times the quantity x plus 3', 'the fraction: 2x times the quantity x plus 3, over 2x'])
+    expect(r.map(t => t.phrase)).toEqual(['2x, top of the fraction', 'x plus 3, top of the fraction', '2x, bottom of the fraction', 'the top of the fraction: 2x times the quantity x plus 3', 'the fraction: 2x times the quantity x plus 3, over 2x'])
     expect(r[0].box).toEqual({ x: 0.237, y: 0.211, w: 0.095, h: 0.15 })
     expect(r.map(t => t.id)).toEqual([1, 2, 3, 4, 5])
   })
@@ -95,7 +95,7 @@ describe('parseBoardResponse: tagged lines', () => {
   it('keeps pipes inside the LaTeX when a tag is present', () => {
     const [t] = parseBoardResponse('|x|-1|left|100|100|100|100')
     expect(t.latex).toBe('|x|-1')
-    expect(t.phrase.endsWith(', on the left side')).toBe(true)
+    expect(t.phrase.endsWith(', left side of the equation')).toBe(true)
   })
   it('old 5-field lines with a pipe in the LaTeX still parse', () => {
     expect(parseBoardResponse('|x||100|100|100|100')[0].latex).toBe('|x|')

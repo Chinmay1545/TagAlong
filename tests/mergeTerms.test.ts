@@ -60,3 +60,16 @@ describe('mergeTerms', () => {
     expect(mergeTerms([], [T(7, 'a', 0.1, 0.1), T(8, 'b', 0.5, 0.1)], { dropMissing: true }).map(t => t.id)).toEqual([1, 2])
   })
 })
+
+describe('mergeTerms latex key', () => {
+  it('x^{3} and x^3 are the same term', () => {
+    const old = { id: 1, latex: '2x^3', phrase: 'a', box: { x: 0.2, y: 0.2, w: 0.1, h: 0.1 } }
+    const out = mergeTerms([old], [{ ...old, id: 9, latex: '2x^{3}' }], { dropMissing: true })
+    expect(out).toEqual([old])
+    expect(out[0]).toBe(old)
+  })
+  it('x_{1} and x_1 are the same term', () => {
+    const old = { id: 1, latex: 'x_1', phrase: 'a', box: { x: 0.2, y: 0.2, w: 0.1, h: 0.1 } }
+    expect(mergeTerms([old], [{ ...old, id: 9, latex: 'x_{1}' }], { dropMissing: true })[0]).toBe(old)
+  })
+})

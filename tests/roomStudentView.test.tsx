@@ -141,7 +141,7 @@ describe('student phone (classroom relay)', () => {
   it('reads the overview, not the pieces, and shows it', async () => {
     const t = setup()
     t.start()
-    await t.recv({ type: 'board', phrases: ['2x, in the top', '2x, in the bottom'], overview: ['the fraction: 2x, over 2x'] })
+    await t.recv({ type: 'board', phrases: ['2x, top of the fraction', '2x, bottom of the fraction'], overview: ['the fraction: 2x, over 2x'] })
     expect(t.player.prepare.mock.calls[0][0].map(x => x.phrase)).toEqual(['the fraction: 2x, over 2x'])
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /what's on the board/i })); await sleep(5) })
     const [r, o] = t.player.play.mock.calls.at(-1) as unknown as [Resolution, { soft?: boolean }]

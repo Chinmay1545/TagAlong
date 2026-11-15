@@ -10,11 +10,11 @@ import { inOrder, move, rest } from './helpers/board'
 
 // Demo board: top row "2x" (A) and "x plus 3" (B), bottom "2x" (C), then the groups.
 const t = (id: number, phrase: string, x: number, y: number, w: number, h: number): Term => ({ id, latex: phrase, phrase, box: { x, y, w, h } })
-const A = t(1, '2x, in the top', 0.2, 0.2, 0.1, 0.1)
-const B = t(2, 'x plus 3, in the top', 0.4, 0.2, 0.2, 0.1)
-const C = t(3, '2x, in the bottom', 0.3, 0.6, 0.1, 0.1)
-const TOP = t(4, 'the top: 2x times x plus 3', 0.2, 0.2, 0.4, 0.1)
-const BOT = t(5, 'the bottom: 2x', 0.3, 0.6, 0.1, 0.1)
+const A = t(1, '2x, top of the fraction', 0.2, 0.2, 0.1, 0.1)
+const B = t(2, 'x plus 3, top of the fraction', 0.4, 0.2, 0.2, 0.1)
+const C = t(3, '2x, bottom of the fraction', 0.3, 0.6, 0.1, 0.1)
+const TOP = t(4, 'the top of the fraction: 2x times x plus 3', 0.2, 0.2, 0.4, 0.1)
+const BOT = t(5, 'the bottom of the fraction: 2x', 0.3, 0.6, 0.1, 0.1)
 const FRAC = t(6, 'the fraction: 2x times x plus 3, over 2x', 0.2, 0.2, 0.4, 0.5)
 const TERMS = [A, B, C, TOP, BOT, FRAC]
 const word = (w: string, at: number) => ({ word: w, t: at, isPointer: true })
@@ -26,19 +26,19 @@ const read = (x: number, y: number, after: string[] = [], terms = TERMS) => {
 
 describe('scope words', () => {
   it('groupKind parses the contract', () => {
-    expect(groupKind('the left side: 3x plus 5')).toBe('left side')
-    expect(groupKind('2x, in the top')).toBeNull()
+    expect(groupKind('the left side of the equation: 3x plus 5')).toBe('left side')
+    expect(groupKind('2x, top of the fraction')).toBeNull()
   })
   it('only the next 3 words count', () => {
     expect(scopeFrom(['is', 'the', 'top'])).toBe('top')
     expect(scopeFrom(['is', 'my', 'dear', 'top'])).toBeNull()
   })
-  it('no scope: smallest box wins; the gap in the top is the top group; the bar is the fraction', () => {
+  it('no scope: smallest box wins; the gap top of the fraction is the top group; the bar is the fraction', () => {
     expect(read(0.25, 0.25)).toEqual([1])
     expect(read(0.35, 0.25)).toEqual([4])
     expect(read(0.4, 0.45)).toEqual([6])
   })
-  it('"this top" on a term in the top: the top group; "bottom" with no bottom group around: keeps the term', () => {
+  it('"this top" on a term top of the fraction: the top group; "bottom" with no bottom group around: keeps the term', () => {
     expect(read(0.25, 0.25, ['top'])).toEqual([4])
     expect(read(0.25, 0.25, ['bottom'], [A, B, TOP])).toEqual([1])
   })
@@ -91,7 +91,7 @@ describe('these / those over a board with groups', () => {
     const tips = new TipBuffer()
     inOrder(move('finger', { x: 0.25, y: 0.25 }, { x: 0.35, y: 0.65 }, 100, 700, 25)).forEach(p => tips.push(p))
     const r = readPointer(word('these', 400), TERMS, tips).resolution
-    expect(r.terms.map(x => x.phrase)).toEqual(['2x, in the top', '2x, in the bottom'])
+    expect(r.terms.map(x => x.phrase)).toEqual(['2x, top of the fraction', '2x, bottom of the fraction'])
   })
 })
 

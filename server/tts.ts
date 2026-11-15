@@ -2,6 +2,7 @@ import express from 'express'
 import { PollyClient, SynthesizeSpeechCommand } from '@aws-sdk/client-polly'
 import { speakMath } from '../src/core/speakMath'
 import { TTS_MAX_CHARS } from '../src/core/config'
+import { clipPhrase } from '../src/live/roomProtocol'
 
 export type Synth = (text: string) => Promise<Buffer>
 
@@ -15,7 +16,7 @@ export function ttsRouter(synth: Synth, guard?: (res: express.Response, text: st
   router.post('/api/tts', express.json({ limit: '4kb' }), async (req, res) => {
     const raw = req.body?.text
     const text = typeof raw === 'string' ? raw.trim() : ''
-    if (!text || text.length > TTS_MAX_CHARS) {
+    if (!text || clipPhrase(text) !== text) { // only a phrase already clipped the shared way (the camera and the phone clip first)
       res.status(400).json({ error: `text must be a non-empty string of at most ${TTS_MAX_CHARS} characters` })
       return
     }

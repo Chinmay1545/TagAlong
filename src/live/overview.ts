@@ -1,7 +1,7 @@
 import type { Term } from '../core/types'
+import { GROUP, groupKind } from '../core/scope'
 import { readingOrder } from './boardQuery'
 
-const GROUP = /^the (top|bottom|fraction|left side|right side|equation|brackets): /
 const TOL = 0.01
 type Box = Term['box']
 const inside = (a: Box, b: Box) => a.x >= b.x - TOL && a.y >= b.y - TOL && a.x + a.w <= b.x + b.w + TOL && a.y + a.h <= b.y + b.h + TOL
@@ -15,4 +15,16 @@ export function topLevel(terms: Term[]): Term[] {
   const covers = (g: Term, t: Term) => g !== t && inside(t.box, g.box) && (!GROUP.test(t.phrase) || area(g.box) > area(t.box) || g.id < t.id)
   return readingOrder(terms.filter(t => !groups.some(g => covers(g, t))))
 }
-export const overview = (terms: Term[]): string[] => topLevel(terms).map(t => t.phrase)
+// Two or more top-level items of one kind are numbered ("equation 1: ...") so they can be told apart.
+export function overview(terms: Term[]): string[] {
+  const top = topLevel(terms)
+  const kind = (t: Term) => groupKind(t.phrase)
+  const count = (k: string) => top.filter(t => kind(t) === k).length
+  const seen: Record<string, number> = {}
+  return top.map(t => {
+    const k = kind(t)
+    if (!k || count(k) < 2) return t.phrase
+    seen[k] = (seen[k] ?? 0) + 1
+    return `${k} ${seen[k]}: ${t.phrase.replace(GROUP, '')}`
+  })
+}

@@ -1,9 +1,16 @@
 import { MAX_DIST } from './config'
 import type { Term } from './types'
 
-// Groups are phrased `the ${KIND}: ...` (see the phrase contract).
-const GROUP = /^the (top|bottom|fraction|left side|right side|equation|brackets): /
-export const groupKind = (phrase: string): string | null => GROUP.exec(phrase)?.[1] ?? null
+// Groups are phrased `the ${PLACE}: ...` (see the phrase contract). The one place that recognises them.
+export const GROUP = /^the (top of the fraction|bottom of the fraction|fraction|left side of the equation|right side of the equation|equation|brackets): /
+const KIND_OF: Record<string, string> = {
+  'top of the fraction': 'top', 'bottom of the fraction': 'bottom',
+  'left side of the equation': 'left side', 'right side of the equation': 'right side',
+}
+export const groupKind = (phrase: string): string | null => {
+  const m = GROUP.exec(phrase)?.[1]
+  return m ? KIND_OF[m] ?? m : null
+}
 
 // Words said right after "this" that choose a group. 'whole' means the largest group under the aim.
 const SCOPE: Record<string, string> = {
@@ -33,7 +40,12 @@ const largest = (ts: Term[]) => ts.reduce<Term | null>((b, t) => (!b || area(t) 
 // The group a scope word picks for an aim, or null (the caller keeps its normal answer).
 export function groupFor(terms: Term[], aim: { x: number; y: number }, scope: string, maxDist = MAX_DIST): Term | null {
   const groups = terms.filter(t => groupKind(t.phrase) && grow(t, aim, maxDist))
-  const kind = (...ks: string[]) => groups.filter(g => ks.includes(groupKind(g.phrase)!))
+  // A group the aim is really inside beats one that is only near (neighbouring brackets are a few hundredths apart).
+  const kind = (...ks: string[]) => {
+    const all = groups.filter(g => ks.includes(groupKind(g.phrase)!))
+    const exact = all.filter(g => grow(g, aim, 0))
+    return exact.length ? exact : all
+  }
   if (scope === 'whole') return largest(groups)
   if (scope === 'side') return smallest(kind('left side', 'right side'))
   const direct = smallest(kind(scope))
