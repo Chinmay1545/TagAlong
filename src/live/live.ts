@@ -1,3 +1,4 @@
+import { groupKind } from '../core/scope'
 import { readPointer, termAt, type When } from '../core/resolver'
 import { HOLD_MAX_MS, LATE_WINDOW_MS, MAX_DIST, RECHECK_MS, SCOPE_SPAN_MS, SCOPE_WAIT_MS, TIP_WINDOW_MS, WEB_SPEECH_LAG_MS } from '../core/config'
 import type { TipBuffer } from '../core/tipBuffer'
@@ -161,7 +162,7 @@ export function createLive({ getTerms, tips, player, now = () => performance.now
       const pending = getPendingRegion()
       const keep: Held[] = []
       for (const h of held) {
-        const term = termAt(terms, h.tip.x, h.tip.y)
+        const term = termAt(terms.filter(x => !groupKind(x.phrase)), h.tip.x, h.tip.y)
         if (term) emit({ word: h.word, terms: [term] })
         else if (!pending || now() - h.at > HOLD_MAX_MS) emit({ word: h.word, terms: [] }) // nothing left to read, or waited long enough
         else keep.push(h)

@@ -216,7 +216,8 @@ export function readPointer(word: WordEvent, terms: Term[], tips: TipBuffer, whe
     const sweep = sweepGroup(terms, tips, t, scope)
     return sweep ? { ...none('not-pointing'), sweep } : none('not-pointing')
   }
-  const term = (scope && groupFor(terms, aim, scope)) || termAt(terms, aim.x, aim.y, MAX_DIST, NEST_SNAP, TIE_DIST)
+  // Groups only through a scope word; a plain "this" sees single terms (a finger just off a term is not "the whole equation").
+  const term = (scope && groupFor(terms, aim, scope)) || termAt(terms.filter(x => !groupKind(x.phrase)), aim.x, aim.y, MAX_DIST, NEST_SNAP, TIE_DIST)
   return term ? { resolution: { word, terms: [term] }, aim, miss: null, landing } : { ...none('empty-space', aim), landing }
 }
 

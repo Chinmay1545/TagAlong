@@ -309,6 +309,7 @@ export function JudgeScreen() {
       for (const t of termsRef.current) {
         const on = hit.includes(t)
         const group = !!groupKind(t.phrase)
+        if (group && !on) continue // a group box is drawn only while it is the resolved one
         const x = flipX(t.box.x, t.box.w) * W, y = t.box.y * H
         if (on) {
           ctx.globalAlpha = 0.12
@@ -318,10 +319,8 @@ export function JudgeScreen() {
         }
         ctx.lineWidth = on ? 2 : 1
         ctx.strokeStyle = on ? hue : LINE
-        ctx.globalAlpha = group && !on ? 0.4 : 1 // a group box is a faint outline; its label would pile on its terms' labels
         drawBox(ctx, t.box, W, H)
-        ctx.globalAlpha = 1
-        if (!group || on) drawLabel(ctx, t.phrase, x, y - 4, on ? hue : null, small)
+        drawLabel(ctx, t.phrase, x, y - 4, on ? hue : null, small)
       }
       const tip = activePointer(tipsRef.current.all(), now) // laser, then stick, then finger
       if (signalRef.current && !reduceMotion?.matches) drawSignal(ctx, signalRef.current, tip, now, W, H)

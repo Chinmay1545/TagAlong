@@ -33,10 +33,12 @@ describe('scope words', () => {
     expect(scopeFrom(['is', 'the', 'top'])).toBe('top')
     expect(scopeFrom(['is', 'my', 'dear', 'top'])).toBeNull()
   })
-  it('no scope: smallest box wins; the gap top of the fraction is the top group; the bar is the fraction', () => {
+  it('no scope: smallest box wins; the gap and the bar are silent (groups need a scope word, then they answer)', () => {
     expect(read(0.25, 0.25)).toEqual([1])
-    expect(read(0.35, 0.25)).toEqual([4])
-    expect(read(0.4, 0.45)).toEqual([6])
+    expect(read(0.35, 0.25)).toEqual([])
+    expect(read(0.4, 0.45)).toEqual([])
+    expect(read(0.35, 0.25, ['top'])).toEqual([4])
+    expect(read(0.4, 0.45, ['fraction'])).toEqual([6])
   })
   it('"this top" on a term top of the fraction: the top group; "bottom" with no bottom group around: keeps the term', () => {
     expect(read(0.25, 0.25, ['top'])).toEqual([4])

@@ -152,9 +152,15 @@ describe('the six demo moments, through the real pointing code', () => {
     s.run(3000)
     expect(s.played).toEqual([])
   })
-  it('a finger resting on the bar of the left fraction, "this": that fraction', () => {
+  it('a finger resting on the bar of the left fraction, "this": nothing (groups need a scope word)', () => {
     const s = session(rest('finger', 0.14, 0.42, 0, 2000))
     s.say([['this', 500]])
+    s.run(3000)
+    expect(s.played).toEqual([])
+  })
+  it('a finger resting on the bar of the left fraction, "this fraction": that fraction', () => {
+    const s = session(rest('finger', 0.14, 0.42, 0, 2000))
+    s.say([['this', 500], ['fraction', 620]])
     s.run(3000)
     expect(s.played).toEqual(['the fraction: x squared minus 9, over x squared plus 5x plus 6'])
   })
