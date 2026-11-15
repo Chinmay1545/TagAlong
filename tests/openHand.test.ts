@@ -91,3 +91,18 @@ describe('the hand switch', () => {
     expect(pointersLabel({ laser: false, stick: false, hand: false }, false)).toBe('finger')
   })
 })
+
+describe('?openratio calibration', () => {
+  it('parses a valid value; junk and out-of-range keep the default', async () => {
+    const { openRatioFor } = await import('../src/vision/tools')
+    expect(openRatioFor('?openratio=1.1')).toBe(1.1)
+    expect(openRatioFor('')).toBe(1.25)
+    for (const v of ['abc', '', '1', '2.5', '-3']) expect(openRatioFor(`?openratio=${v}`)).toBe(1.25)
+  })
+  it('ratio 1.05 accepts the relaxed hand that 1.25 rejects', async () => {
+    const { isOpenHand } = await import('../src/vision/palm')
+    const { hand, RELAXED } = await import('./helpers/hand')
+    expect(isOpenHand(hand(RELAXED), 1)).toBe(false)
+    expect(isOpenHand(hand(RELAXED), 1, 1.05)).toBe(true)
+  })
+})

@@ -15,6 +15,7 @@ export async function startHandTracker(
   video: HTMLVideoElement,
   onTip: (p: PointerPoint) => void,
   onHand: (h: HandInfo | null) => void = () => {}, // the whole hand, for the stick detector
+  openRatio?: number, // how far out a finger must be to count as open (?openratio=)
   gesture: () => boolean = () => true, // open-hand gesture on? (read every frame, so a key can switch it at runtime)
 ): Promise<() => void> {
   let landmarker: HandLandmarker
@@ -34,7 +35,7 @@ export async function startHandTracker(
         const confidence = res.handedness?.[0]?.[0]?.score ?? 1
         const aspect = video.videoWidth / video.videoHeight
         onHand(handInfo(res.landmarks[0], aspect, now))
-        const p = handPoint(res.landmarks[0], aspect, confidence, now, gesture()) // fingertip, or the palm for an open hand; unmirrored, never flip
+        const p = handPoint(res.landmarks[0], aspect, confidence, now, gesture(), openRatio) // fingertip, or the palm for an open hand; unmirrored, never flip
         if (p) onTip(p)
       } catch (e) {
         console.warn('detectForVideo failed, skipping frame:', (e as Error).message) // one bad frame must not kill tracking

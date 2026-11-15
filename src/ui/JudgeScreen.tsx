@@ -8,7 +8,7 @@ import { keepScreenAwake } from '../vision/wakeLock'
 import { startHandTracker } from '../vision/handTracker'
 import { startToolTracker } from '../vision/toolTracker'
 import type { HandInfo } from '../vision/stick'
-import { pointersLabel, toolsFor } from '../vision/tools'
+import { openRatioFor, pointersLabel, toolsFor } from '../vision/tools'
 import { loadFixture } from '../board/boardClient'
 import { boardMode, stageFor } from '../board/mode'
 import { activePointer, kindOf } from '../vision/pointer'
@@ -254,7 +254,7 @@ export function JudgeScreen() {
           return
         }
         let hand: HandInfo | null = null
-        const stop = await startHandTracker(video, s => tipsRef.current.push(s), h => { hand = h }, () => handOnRef.current)
+        const stop = await startHandTracker(video, s => tipsRef.current.push(s), h => { hand = h }, openRatioFor(location.search), () => handOnRef.current)
         if (cancelled) { stop(); return }
         const stopTools = startToolTracker(video, p => tipsRef.current.push(p), () => hand, { laser: tools.laser, stick: tools.stick }) // laser dot and stick tip, if switched on
         stopTracker = () => { stop(); stopTools() }

@@ -10,11 +10,11 @@ const TIPS = [8, 12, 16, 20]
 const PIPS = [6, 10, 14, 18]
 
 // All four fingers (index to pinky) clearly extended. x is scaled by aspect so distances are true at any frame shape.
-export function isOpenHand(landmarks: Pt[] | undefined, aspect: number): boolean {
+export function isOpenHand(landmarks: Pt[] | undefined, aspect: number, ratio = OPEN_RATIO): boolean {
   if (!landmarks || landmarks.length < 21) return false
   const w = landmarks[0]
   const d = (p: Pt) => Math.hypot((p.x - w.x) * aspect, p.y - w.y)
-  return TIPS.every((tip, i) => d(landmarks[tip]) > OPEN_RATIO * d(landmarks[PIPS[i]]))
+  return TIPS.every((tip, i) => d(landmarks[tip]) > ratio * d(landmarks[PIPS[i]]))
 }
 
 // The middle of the fingers (knuckles and fingertips): that is what lies on the writing.
@@ -24,9 +24,9 @@ export function palmCentre(landmarks: Pt[]): Pt {
 }
 
 // What the hand tracker pushes for one frame: the palm for an open hand (when the gesture is on), else the fingertip.
-export function handPoint(landmarks: Pt[] | undefined, aspect: number, confidence: number, t: number, gesture: boolean): PointerPoint | null {
+export function handPoint(landmarks: Pt[] | undefined, aspect: number, confidence: number, t: number, gesture: boolean, ratio = OPEN_RATIO): PointerPoint | null {
   const tip = landmarks?.[8]
   if (!landmarks || !tip) return null
-  if (gesture && isOpenHand(landmarks, aspect)) return { kind: 'palm', ...palmCentre(landmarks), confidence, t }
+  if (gesture && isOpenHand(landmarks, aspect, ratio)) return { kind: 'palm', ...palmCentre(landmarks), confidence, t }
   return { kind: 'finger', x: tip.x, y: tip.y, confidence, t }
 }
