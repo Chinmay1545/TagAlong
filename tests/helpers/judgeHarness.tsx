@@ -32,6 +32,7 @@ export async function mountJudge(search = '') {
     startCamera: vi.fn(async () => {}),
     setTerms: null as null | ((t: Term[]) => void), // live mode: what a board read would hand over
     pushPoint: null as null | ((p: PointerPoint) => void), // what the hand tracker / detectors would report
+    boxes: 0, // boxes drawn in the latest frame (reset by clearRect)
     texts: [] as string[], // every label drawn on the overlay
     arcs: [] as number[][], // every dot drawn on the overlay: [x, y, r]
   }
@@ -63,6 +64,8 @@ export async function mountJudge(search = '') {
   // jsdom has no canvas: a stand-in context that accepts every call and remembers labels and dots.
   const ctx = new Proxy({} as Record<string, unknown>, {
     get: (store, key: string) => {
+      if (key === 'clearRect') return () => { fakes.boxes = 0 }
+      if (key === 'strokeRect') return () => { fakes.boxes++ }
       if (key === 'fillText') return (s: string) => { fakes.texts.push(s) }
       if (key === 'arc') return (...a: number[]) => { fakes.arcs.push(a.slice(0, 3)) }
       if (key === 'measureText') return (s: string) => ({ width: s.length * 6 })
@@ -96,7 +99,7 @@ export async function mountJudge(search = '') {
     // The number shown in the stats strip under a label such as "terms".
     stat: (label: string) => [...view.container.querySelectorAll('.stats dt')].find(dt => dt.textContent === label)?.nextElementSibling?.textContent ?? null,
     // Forget what was drawn so far, then wait for fresh frames.
-    redraw: async () => { fakes.texts.length = 0; fakes.arcs.length = 0; await act(() => sleep(60)) },
+    redraw: async () => { fakes.texts.length = 0; fakes.boxes = 0; fakes.arcs.length = 0; await act(() => sleep(60)) },
   }
 }
 

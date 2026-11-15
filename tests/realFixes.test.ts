@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { parseBoardResponse } from '../server/parseBoard'
+import { GROUP } from '../src/core/scope'
 import { tidyTerms, uniquePhrases, phraseFor } from '../src/core/phrase'
 import { speakMath } from '../src/core/speakMath'
 import { overview } from '../src/live/overview'
@@ -104,5 +106,31 @@ describe('numbered container', () => {
     ])
     expect(out.some(x => x.phrase.includes('in left side'))).toBe(false)
     expect(new Set(out.map(x => x.phrase)).size).toBe(4)
+  })
+})
+
+describe('suffixes only when they distinguish', () => {
+  const check = (raw: string, expected: string[]) => {
+    const out = uniquePhrases(parseBoardResponse(raw))
+    const phrases = out.map(x => x.phrase)
+    for (const e of expected) expect(phrases).toContain(e)
+    expect(phrases.filter(p => !GROUP.test(p)).some(p => /\b(left|right|upper|lower) (y|1|3)\b|the (left|right|upper|lower) /.test(p))).toBe(false)
+    expect(new Set(phrases).size).toBe(phrases.length)
+    expect(uniquePhrases(out).map(x => x.phrase)).toEqual(phrases)
+    out.filter(x => /^the /.test(x.phrase) && x.phrase.includes(': ')).forEach(x => expect(x.phrase).toMatch(GROUP))
+  }
+  it('A: (y - 1)(y + 3) = 0, no stacked brackets or side suffix', () => {
+    check([
+      'y|bracket|120|100|40|80', '1|bracket|200|100|30|80', 'y|bracket|420|100|40|80', '3|bracket|500|100|30|80',
+      '(y - 1)|group|100|90|150|100', '(y + 3)|group|400|90|150|100',
+      '(y-1)(y+3)|lhs|90|80|480|120', '0|rhs|620|100|40|80', '(y-1)(y+3)=0|equation|80|70|600|140',
+    ].join('\n'), ['y, in the brackets y minus 1', 'y, in the brackets y plus 3'])
+  })
+  it('B: brackets listed as single terms inside a denominator', () => {
+    check([
+      'y|bottom|120|600|40|80', '1|bottom|200|600|30|80', 'y|bottom|420|600|40|80', '3|bottom|500|600|30|80',
+      'y + 1|bracket|100|590|150|100', 'y + 3|bracket|400|590|150|100',
+      'a|top|100|200|500|100', '(y+1)(y+3)|bottom|90|580|480|120', '\\frac{a}{(y+1)(y+3)}|fraction|80|190|600|520',
+    ].join('\n'), ['y, bottom of the fraction, in y plus 1', 'y, bottom of the fraction, in y plus 3'])
   })
 })

@@ -51,11 +51,14 @@ describe('judge screen: groups on the overlay', () => {
     await j.redraw()
     expect(j.fakes.texts).toContain(FIXTURE[0].phrase)
     expect(j.fakes.texts).not.toContain(GROUP.phrase)
+    expect(j.fakes.boxes).toBe(FIXTURE.length) // no group box either
     for (let i = 0; i < 12; i++) { j.fakes.pushPoint!({ kind: 'finger', x: 0.375, y: 0.27, confidence: 1, t: performance.now() }); await j.wait(30) }
-    await j.key('p')
+    await act(async () => { window.__tt!.say('this top part') })
+    await j.wait(400)
     expect(j.log()[0]).toMatch(/^this → the top of the fraction: 2x times x plus 3/)
     await j.redraw()
     expect(j.fakes.texts).toContain(GROUP.phrase)
+    expect(j.fakes.boxes).toBe(FIXTURE.length + 1)
   })
 })
 
@@ -83,7 +86,8 @@ describe('judge screen: reset button', () => {
     const j = await mountJudge('')
     await act(async () => { j.fakes.setTerms!(FIXTURE) })
     for (let i = 0; i < 12; i++) { j.fakes.pushPoint!({ kind: 'finger', x: 0.25, y: 0.27, confidence: 1, t: performance.now() }); await j.wait(30) }
-    await j.key('p')
+    await act(async () => { window.__tt!.say('this top part') })
+    await j.wait(400)
     expect(j.log()[0]).toMatch(/^this → the 2x on top left/)
     await act(async () => { fireEvent.click(j.getByRole('button', { name: 'Reset board' })) })
     await act(async () => { j.fakes.setTerms!(FIXTURE) }) // the board is read again
@@ -120,7 +124,8 @@ describe('judge screen: with / without app', () => {
     await j.key('p')
     expect(j.log()).toEqual(['this → the 2x on top left · muted'])
     await j.key('w')
-    await j.key('p')
+    await act(async () => { window.__tt!.say('this top part') })
+    await j.wait(400)
     expect(j.log()[0]).toMatch(/^this → the 2x on top left · \d/)
   })
 })

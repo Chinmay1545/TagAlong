@@ -107,6 +107,7 @@ export function tidyTerms<T extends { phrase: string; box: Box }>(terms: T[]): T
 const original = new WeakMap<object, string>()
 const originalOf = (t: { phrase: string }) => original.get(t) ?? t.phrase
 
+const PLACE_TAIL = new RegExp(`, (${Object.values(PLACE).join('|')})$`)
 const SIDE_PLACE: Record<string, string> = { top: 'top of the fraction', bottom: 'bottom of the fraction', 'left side': 'left side of the equation', 'right side': 'right side of the equation' }
 
 export function uniquePhrases<T extends { phrase: string; box: Box }>(input: T[]): T[] {
@@ -140,6 +141,10 @@ export function uniquePhrases<T extends { phrase: string; box: Box }>(input: T[]
       const j = smallestAround(i, k => kinds[k] === 'brackets')
       return j < 0 ? null : `, in the brackets ${base[j].replace(GROUP_HEAD, '')}`
     },
+    i => { // the single term (not a group) it sits in, e.g. a bracket listed as one term: ", in y plus 1"
+      const j = smallestAround(i, k => !kinds[k])
+      return j < 0 ? null : `, in ${base[j].replace(PLACE_TAIL, '')}`
+    },
     i => { // the equation or fraction it belongs to, numbered in reading order among those of its kind
       const j = smallestAround(i, k => tops.includes(k) && (kinds[k] === 'equation' || kinds[k] === 'fraction'))
       if (j < 0) return null
@@ -159,7 +164,11 @@ export function uniquePhrases<T extends { phrase: string; box: Box }>(input: T[]
     const next: number[][] = []
     for (const set of sets) {
       const add = set.map(i => stage(i, cur[i]))
-      set.forEach((i, n) => { if (add[n]) cur[i] = `${cur[i]}${add[n]}` })
+      // A suffix every member shares tells them nothing apart, so it is not added.
+      if (add.some(a => a !== add[0])) set.forEach((i, n) => {
+        const a = add[n]
+        if (a) cur[i] = a.startsWith(', in the brackets') ? cur[i].replace(/, in the brackets$/, '') + a : cur[i] + a
+      })
       next.push(...bySet(set))
     }
     sets = next

@@ -1,4 +1,4 @@
-import { DWELL_MS, DWELL_RADIUS, MAX_DIST, NEST_SNAP, TIE_DIST, TIP_WINDOW_MS } from './config'
+import { DWELL_MS, DWELL_RADIUS, MAX_DIST, NEST_SNAP, TIE_DIST, TIE_RATIO, TIP_WINDOW_MS } from './config'
 import { groupFor, groupKind, scopeFrom } from './scope'
 import type { TipBuffer } from './tipBuffer'
 import type { Box, Resolution, Term, TipSample, WordEvent } from './types'
@@ -46,7 +46,7 @@ export function termAt(terms: Term[], x: number, y: number, maxDist = MAX_DIST, 
     for (const term of terms) {
       if (term === best || holds(term, best) || holds(best, term)) continue
       const d = boxDistance(term.box, x, y)
-      if (d <= maxDist && d - bestD < tie) return null
+      if (d <= maxDist && d - bestD < tie && bestD > TIE_RATIO * d) return null
     }
     return best
   }
@@ -76,7 +76,7 @@ export function termAt(terms: Term[], x: number, y: number, maxDist = MAX_DIST, 
       if (term === p || term === best || term.box.w * term.box.h >= bestArea - EPS || nested(term, p) || nested(p, term)) continue
       if (boxDistance(best.box, term.box.x + term.box.w / 2, term.box.y + term.box.h / 2) > EPS) continue
       const d = boxDistance(term.box, x, y)
-      if (d <= reach && d - pickD < tie) return null
+      if (d <= reach && d - pickD < tie && pickD > TIE_RATIO * d) return null
     }
   }
   return pick ?? best
@@ -216,7 +216,8 @@ export function readPointer(word: WordEvent, terms: Term[], tips: TipBuffer, whe
     const sweep = sweepGroup(terms, tips, t, scope)
     return sweep ? { ...none('not-pointing'), sweep } : none('not-pointing')
   }
-  const term = (scope && groupFor(terms, aim, scope)) || termAt(terms, aim.x, aim.y, MAX_DIST, NEST_SNAP, TIE_DIST)
+  // Groups only through a scope word; a plain "this" sees single terms (a finger just off a term is not "the whole equation").
+  const term = (scope && groupFor(terms, aim, scope)) || termAt(terms.filter(x => !groupKind(x.phrase)), aim.x, aim.y, MAX_DIST, NEST_SNAP, TIE_DIST)
   return term ? { resolution: { word, terms: [term] }, aim, miss: null, landing } : { ...none('empty-space', aim), landing }
 }
 
